@@ -17,6 +17,9 @@ import com.papertrader.feed.FinnhubQuoteProvider;
 import com.papertrader.feed.LivePriceFeed;
 import com.papertrader.feed.SimulatedPriceFeed;
 import com.papertrader.feed.YahooQuoteProvider;
+import com.papertrader.feed.YahooFundamentalsProvider;
+import com.papertrader.feed.CoinGeckoGlobalProvider;
+import com.papertrader.service.MarketDataService;
 import com.papertrader.fees.PercentageFeeCalculator;
 import com.papertrader.interfaces.FeeCalculator;
 import com.papertrader.interfaces.PriceFeed;
@@ -73,7 +76,10 @@ public class App {
         List<QuoteProvider> providers = new ArrayList<>();
         providers.add(new BinanceQuoteProvider());
         String finnhubKey = config.finnhubApiKey();
-        providers.add(finnhubKey.isEmpty() ? new YahooQuoteProvider() : new FinnhubQuoteProvider(finnhubKey));
+        if (!finnhubKey.isEmpty()) {
+            providers.add(new FinnhubQuoteProvider(finnhubKey));   // US stocks / ETFs
+        }
+        providers.add(new YahooQuoteProvider());                    // everything else (and NSE shares)
 
         System.out.println("Downloading live prices...");
         LivePriceFeed live = new LivePriceFeed(assets, providers);
@@ -110,6 +116,7 @@ public class App {
         TradingService tradingService = new TradingService(fees, execution, userRepository, transactionRepository);
         PortfolioService portfolioService = new PortfolioService(marketService);
         ChartService chartService = new ChartService(historyProviders);
+        MarketDataService marketDataService = createMarketData(priceFeed instanceof LivePriceFeed, chartService);
         AnalyticsService analyticsService = new AnalyticsService(portfolioService, tradingService,
                 new FileEquityRepository(dataDir), STARTING_CASH);
         LeaderboardService leaderboardService = new LeaderboardService(userRepository, portfolioService,
@@ -125,11 +132,21 @@ public class App {
 
         // 5. Show the window and start the market
         AppContext context = new AppContext(authService, marketService, tradingService, portfolioService,
-                chartService, analyticsService, leaderboardService, botService, fees, priceFeed, STARTING_CASH);
+                chartService, marketDataService, analyticsService, leaderboardService, botService, fees, priceFeed, STARTING_CASH);
         MainFrame frame = new MainFrame(context);
         frame.setVisible(true);
         botService.start();
         priceFeed.start();
+    }
+
+    /** Real day / 52-week numbers, company data and news (Yahoo, Binance, CoinGecko); candles only when offline. */
+    private static MarketDataService createMarketData(boolean live, ChartService charts) {
+        if (!live) {
+            return new MarketDataService(List.of(), null, null, null, charts);
+        }
+        YahooQuoteProvider yahoo = new YahooQuoteProvider();
+        return new MarketDataService(List.of(new BinanceQuoteProvider(), yahoo), new YahooFundamentalsProvider(),
+                yahoo, new CoinGeckoGlobalProvider(), charts);
     }
 
     /** Creates "demo / demo" with a few holdings the first time the app runs, so there is something to show. */

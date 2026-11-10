@@ -32,7 +32,8 @@ public class FinnhubQuoteProvider extends HttpQuoteProvider {
 
     @Override
     public boolean supports(Asset asset) {
-        return asset instanceof Stock || asset instanceof ETF;
+        // Finnhub's free plan has US markets only; NSE shares go to Yahoo Finance instead
+        return (asset instanceof Stock || asset instanceof ETF) && !YahooSymbols.isIndian(asset.getSymbol());
     }
 
     @Override

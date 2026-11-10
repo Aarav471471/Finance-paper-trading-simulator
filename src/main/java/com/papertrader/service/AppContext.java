@@ -14,6 +14,7 @@ public record AppContext(
         TradingService trading,
         PortfolioService portfolio,
         ChartService charts,
+        MarketDataService marketData,
         AnalyticsService analytics,
         LeaderboardService leaderboard,
         BotService bots,

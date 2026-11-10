@@ -1,6 +1,8 @@
 package com.papertrader.feed;
 
 import com.papertrader.interfaces.HistoryProvider;
+import com.papertrader.interfaces.SnapshotProvider;
+import com.papertrader.model.MarketSnapshot;
 import com.papertrader.model.Asset;
 import com.papertrader.model.Candle;
 import com.papertrader.model.Crypto;
@@ -24,7 +26,7 @@ import java.util.Map;
  * [{"symbol":"BTCUSDT","lastPrice":"68012.10","openPrice":"67100.00",...}, ...]
  * openPrice = price 24 hours ago (crypto trades 24/7, so there is no daily "close").
  */
-public class BinanceQuoteProvider extends HttpQuoteProvider implements HistoryProvider {
+public class BinanceQuoteProvider extends HttpQuoteProvider implements HistoryProvider, SnapshotProvider {
 
     @Override
     public String getName() {
@@ -55,6 +57,20 @@ public class BinanceQuoteProvider extends HttpQuoteProvider implements HistoryPr
             }
         }
         return quotes;
+    }
+
+    /** 24-hour open / high / low / volume of one coin. The 52-week range comes from daily candles instead. */
+    @Override
+    public MarketSnapshot fetchSnapshot(Asset asset) throws IOException {
+        return parseSnapshot(get("https://api.binance.com/api/v3/ticker/24hr?symbol=" + toBinanceSymbol(asset)));
+    }
+
+    static MarketSnapshot parseSnapshot(String json) {
+        JSONObject t = new JSONObject(json);
+        double open = t.getDouble("openPrice");
+        return new MarketSnapshot(t.getDouble("lastPrice"), open, open,
+                t.getDouble("highPrice"), t.getDouble("lowPrice"), t.getDouble("volume"),
+                Double.NaN, Double.NaN, "Binance");
     }
 
     @Override
