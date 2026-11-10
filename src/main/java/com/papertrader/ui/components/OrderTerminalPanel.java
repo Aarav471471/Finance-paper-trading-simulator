@@ -431,17 +431,21 @@ public class OrderTerminalPanel extends JPanel {
 
         int qty = parseQuantity();
         try {
+            com.papertrader.model.Order order;
             if ("Market".equals(orderType)) {
-                tradingService.placeOrder(user, currentAsset, currentSide, qty);
+                order = tradingService.placeOrder(user, currentAsset, currentSide, qty);
             } else if ("Limit".equals(orderType)) {
-                tradingService.placeOrder(user, new LimitOrder(currentAsset, currentSide, qty, currentAsset.getPrice()));
+                order = tradingService.placeOrder(user, new LimitOrder(currentAsset, currentSide, qty, currentAsset.getPrice()));
             } else {
-                tradingService.placeOrder(user, new StopLossOrder(currentAsset, currentSide, qty, currentAsset.getPrice()));
+                order = tradingService.placeOrder(user, new StopLossOrder(currentAsset, currentSide, qty, currentAsset.getPrice()));
             }
 
+            String result = order.getStatus() == com.papertrader.model.OrderStatus.FILLED
+                    ? "filled @ " + Formatter.money(order.getFilledPrice())
+                    : "waiting (" + order.getConditionText() + ")";
             JOptionPane.showMessageDialog(this,
-                    "Simulated Order Executed:\n" + currentSide.name() + " " + qty + " " + currentAsset.getSymbol() + " @ " + Formatter.money(currentAsset.getPrice()),
-                    "Order Filled", JOptionPane.INFORMATION_MESSAGE);
+                    "Simulated Order:\n" + currentSide.name() + " " + qty + " " + currentAsset.getSymbol() + " " + result,
+                    "Order Placed", JOptionPane.INFORMATION_MESSAGE);
 
             if (onOrderExecuted != null) {
                 onOrderExecuted.run();

@@ -1,6 +1,8 @@
 package com.papertrader.ui.components;
 
 import com.papertrader.model.Asset;
+import com.papertrader.service.ChartService;
+import com.papertrader.strategy.Indicators;
 import com.papertrader.ui.Theme;
 
 import javax.swing.BorderFactory;
@@ -24,7 +26,9 @@ import java.awt.RenderingHints;
 import java.awt.Stroke;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -91,6 +95,7 @@ public class CandlestickChartPanel extends JPanel {
 
     // State
     private Asset currentAsset;
+    private ChartService chartService;
     private Timeframe currentTimeframe = Timeframe.ONE_MONTH;
     private ChartStyle currentStyle = ChartStyle.CANDLESTICK;
 
@@ -440,97 +445,102 @@ public class CandlestickChartPanel extends JPanel {
         repaint();
     }
 
+    /** Gives the chart its data source. Without one the chart stays empty. */
+    public void setChartService(ChartService chartService) {
+        this.chartService = chartService;
+        regenerateCandles();
+        repaint();
+    }
+
+    /**
+     * Each range button uses a candle size that gives a readable number of candles:
+     * 1D = 5-minute candles, 1W = 1-hour, 1M / 3M / 1Y = daily, 5Y / ALL = weekly.
+     */
+    static com.papertrader.model.Timeframe candleSizeFor(Timeframe range) {
+        return switch (range) {
+            case ONE_DAY -> com.papertrader.model.Timeframe.FIVE_MINUTES;
+            case ONE_WEEK -> com.papertrader.model.Timeframe.ONE_HOUR;
+            case ONE_MONTH, THREE_MONTHS, ONE_YEAR -> com.papertrader.model.Timeframe.ONE_DAY;
+            case FIVE_YEARS, ALL -> com.papertrader.model.Timeframe.ONE_WEEK;
+        };
+    }
+
+    /**
+     * Asks ChartService for REAL candles (Binance / Yahoo Finance, simulated only when offline).
+     * The first time it downloads in the background; after that it comes from the cache,
+     * where every live price keeps the newest candle up to date.
+     */
     private void regenerateCandles() {
+        if (currentAsset == null || chartService == null) {
+            return;
+        }
+        Asset asset = currentAsset;
+        Timeframe range = currentTimeframe;
+        chartService.loadAsync(asset, candleSizeFor(range), loaded -> {
+            if (asset == currentAsset && range == currentTimeframe) {   // user may have switched meanwhile
+                applyCandles(loaded);
+                updateOhlcvDisplay();
+                repaint();
+            }
+        });
+    }
+
+    /** Keeps only the candles inside the chosen range, then calculates the indicators. */
+    private void applyCandles(List<com.papertrader.model.Candle> all) {
+        List<com.papertrader.model.Candle> shown = new ArrayList<>();
+        long cutoff = System.currentTimeMillis() - currentTimeframe.getDays() * 86_400_000L;
+        for (com.papertrader.model.Candle c : all) {
+            if (currentTimeframe == Timeframe.ALL || c.time() >= cutoff) {
+                shown.add(c);
+            }
+        }
+        if (shown.size() < 20) {   // e.g. a stock market that was closed today: show the last session
+            shown = new ArrayList<>(all.subList(Math.max(0, all.size() - 78), all.size()));
+        }
+
         candles.clear();
         sma20Values.clear();
         ema50Values.clear();
-
-        if (currentAsset == null) return;
-
-        double cmp = currentAsset.getPrice();
-        double prev = currentAsset.getPreviousClose() > 0 ? currentAsset.getPreviousClose() : cmp;
-
-        int count = currentTimeframe.getCandleCount();
-        int days = currentTimeframe.getDays();
-        LocalDateTime now = LocalDateTime.now();
-
-        // Establish an organic price walk ending at cmp
-        double volFactor = Math.max(0.012, currentAsset.getVolatility() * 2.8);
-        double netDrift = cmp - prev;
-
-        // Base price at t=0
-        double startPrice = prev - netDrift * 0.4;
-        if (startPrice <= 0) startPrice = cmp * 0.95;
-
-        List<Double> closes = new ArrayList<>();
-        double currentP = startPrice;
-
-        for (int i = 0; i < count; i++) {
-            double frac = (double) i / (count - 1);
-            LocalDateTime t = now.minusHours((long) ((1.0 - frac) * days * 24));
-
-            // Multi-frequency harmonic wave
-            double wave = Math.sin(frac * Math.PI * 3.4) * 0.024 + Math.cos(frac * Math.PI * 6.2) * 0.014;
-            double target = startPrice + (cmp - startPrice) * frac;
-            currentP = target + target * wave;
-
-            if (i == count - 1) {
-                currentP = cmp;
-            }
-
-            double open = (i == 0) ? (startPrice * 0.998) : closes.get(i - 1);
-            double close = currentP;
-
-            // Generate authentic, prominent wicks (upper & lower shadows)
-            double typicalSpan = Math.abs(close - open);
-            double baseWick = Math.max(currentP * 0.004, typicalSpan * 0.65);
-
-            // Upper shadow
-            double upperWick = baseWick * (0.8 + Math.abs(Math.sin((i + 1) * 3.7)) * 1.5);
-            double high = Math.max(open, close) + upperWick;
-
-            // Lower shadow
-            double lowerWick = baseWick * (0.8 + Math.abs(Math.cos((i + 1) * 4.3)) * 1.5);
-            double low = Math.min(open, close) - lowerWick;
-            if (low <= 0) low = close * 0.97;
-
-            double baseVol = 240_000 + Math.abs(Math.sin(frac * 8.2)) * 850_000;
-            if (i == count - 1) baseVol *= 1.5;
-
-            candles.add(new Candle(t, open, high, low, close, baseVol));
-            closes.add(close);
+        if (shown.isEmpty()) {
+            return;
+        }
+        for (com.papertrader.model.Candle c : shown) {
+            LocalDateTime t = LocalDateTime.ofInstant(Instant.ofEpochMilli(c.time()), ZoneId.systemDefault());
+            candles.add(new Candle(t, c.open(), c.high(), c.low(), c.close(), c.volume()));
         }
 
-        // Calculate Technicals: SMA 20, EMA 50, VWAP, RSI
         double sumPriceVol = 0.0;
         double sumVol = 0.0;
+        double ema12 = candles.get(0).close();
+        double ema26 = candles.get(0).close();
+        for (int i = 0; i < candles.size(); i++) {
+            double close = candles.get(i).close();
+            sumPriceVol += close * candles.get(i).volume();
+            sumVol += candles.get(i).volume();
 
-        for (int i = 0; i < closes.size(); i++) {
-            Candle c = candles.get(i);
-            sumPriceVol += c.close() * c.volume();
-            sumVol += c.volume();
-
-            // SMA 20
+            // SMA 20: average of the last 20 closes
             int smaPeriod = Math.min(20, i + 1);
             double smaSum = 0;
             for (int k = i - smaPeriod + 1; k <= i; k++) {
-                smaSum += closes.get(k);
+                smaSum += candles.get(k).close();
             }
             sma20Values.add(smaSum / smaPeriod);
 
-            // EMA 50
+            // EMA 50: newer prices count more
             if (i == 0) {
-                ema50Values.add(closes.get(0));
+                ema50Values.add(close);
             } else {
-                double prevEma = ema50Values.get(i - 1);
-                double k = 2.0 / (Math.min(50, closes.size()) + 1.0);
-                ema50Values.add(closes.get(i) * k + prevEma * (1.0 - k));
+                double k = 2.0 / (50 + 1.0);
+                ema50Values.add(close * k + ema50Values.get(i - 1) * (1.0 - k));
             }
+            ema12 = close * (2.0 / 13) + ema12 * (1 - 2.0 / 13);
+            ema26 = close * (2.0 / 27) + ema26 * (1 - 2.0 / 27);
         }
 
-        this.currentVwap = sumVol > 0 ? (sumPriceVol / sumVol) : cmp;
-        this.currentRsi = (cmp >= prev) ? 64.20 : 42.10;
-        this.currentMacd = (cmp >= prev) ? 12.40 : -4.80;
+        double last = candles.get(candles.size() - 1).close();
+        this.currentVwap = sumVol > 0 ? (sumPriceVol / sumVol) : last;
+        this.currentRsi = shown.size() > 14 ? Indicators.rsi(shown, 14) : 50.0;
+        this.currentMacd = ema12 - ema26;   // MACD line = EMA(12) - EMA(26)
     }
 
     private void updateHoverIndex(int canvasWidth) {

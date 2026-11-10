@@ -719,7 +719,7 @@ public class HistoryPanel extends BasePanel {
                 String ex = ind ? "NSE" : (isCryptoAsset(sym) ? "BINANCE" : "NASDAQ");
                 String cat = ind ? "Equity" : (isCryptoAsset(sym) ? "Crypto" : "Tech");
                 double gross = t.getPrice() * t.getQuantity();
-                double pnl = t.getSide() == OrderSide.SELL ? (gross * 0.08) : 0.0;
+                double pnl = t.getRealizedPnl();   // real: (sell price - average cost) x qty - fee, saved on every SELL
                 rows.add(new AuditRowData(
                         t.getId(),
                         String.format("#ORD-%04d", t.getId()),

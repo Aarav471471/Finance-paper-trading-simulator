@@ -1,11 +1,14 @@
 package com.papertrader.ui;
 
+import com.papertrader.service.ChartService;
 import com.papertrader.exception.SimulatorException;
 import com.papertrader.model.Asset;
 import com.papertrader.model.Order;
 import com.papertrader.model.OrderSide;
 import com.papertrader.model.OrderStatus;
 import com.papertrader.model.StopLossOrder;
+import com.papertrader.model.TakeProfitOrder;
+import com.papertrader.execution.OrderBookSimulator;
 import com.papertrader.model.Transaction;
 import com.papertrader.model.User;
 import com.papertrader.service.AuthService;
@@ -87,7 +90,7 @@ public class TradePanel extends BasePanel {
     private Asset currentAsset;
     private OrderSide currentSide = OrderSide.BUY;
     private String currentProduct = "CNC"; // CNC (Delivery) or MIS (Intraday)
-    private String currentOrderType = "Market"; // Market, Limit, SL-M
+    private String currentOrderType = "Market"; // Market, Limit, SL-M, TP
     private int quantity = 50;
     private double limitPrice = 2945.50;
     private double targetPrice = 3050.00;
@@ -136,6 +139,7 @@ public class TradePanel extends BasePanel {
     private final JButton btnTypeMarket = new JButton("Market");
     private final JButton btnTypeLimit = new JButton("Limit");
     private final JButton btnTypeSlm = new JButton("SL-M");
+    private final JButton btnTypeTp = new JButton("TP");
 
     private final JTextField txtQty = new JTextField("50");
     private final JTextField txtPrice = new JTextField("2,945.50");
@@ -767,21 +771,26 @@ public class TradePanel extends BasePanel {
 
         // Order Type: Market, Limit, SL-M
         card.add(buildFieldLabel("ORDER TYPE"));
-        JPanel typeSwitch = new JPanel(new GridLayout(1, 3, 4, 0));
+        JPanel typeSwitch = new JPanel(new GridLayout(1, 4, 4, 0));
         typeSwitch.setOpaque(false);
         typeSwitch.setMaximumSize(new Dimension(Short.MAX_VALUE, 24));
 
         styleToggleBtn(btnTypeMarket, "Market".equals(currentOrderType));
         styleToggleBtn(btnTypeLimit, "Limit".equals(currentOrderType));
         styleToggleBtn(btnTypeSlm, "SL-M".equals(currentOrderType));
+        styleToggleBtn(btnTypeTp, "TP".equals(currentOrderType));
+        btnTypeSlm.setToolTipText("Stop-Loss: triggers when the price reaches the Stop-Loss field");
+        btnTypeTp.setToolTipText("Take-Profit: triggers when the price reaches the Target field");
 
         btnTypeMarket.addActionListener(e -> setOrderType("Market"));
         btnTypeLimit.addActionListener(e -> setOrderType("Limit"));
         btnTypeSlm.addActionListener(e -> setOrderType("SL-M"));
+        btnTypeTp.addActionListener(e -> setOrderType("TP"));
 
         typeSwitch.add(btnTypeMarket);
         typeSwitch.add(btnTypeLimit);
         typeSwitch.add(btnTypeSlm);
+        typeSwitch.add(btnTypeTp);
         card.add(typeSwitch);
         card.add(Box.createVerticalStrut(8));
 
@@ -907,8 +916,8 @@ public class TradePanel extends BasePanel {
         calcCard.setMaximumSize(new Dimension(Short.MAX_VALUE, 90));
 
         calcCard.add(buildBreakdownRow("Gross Transaction:", calcGrossVal, Theme.TXT_SECONDARY));
-        calcCard.add(buildBreakdownRow("Brokerage (Simulated):", calcBrokerageVal, Theme.GAIN));
-        calcCard.add(buildBreakdownRow("Taxes & Statutory:", calcTaxesVal, Theme.TXT_SECONDARY));
+        calcCard.add(buildBreakdownRow("Est. Spread + Slippage:", calcBrokerageVal, Theme.WARNING));
+        calcCard.add(buildBreakdownRow("Brokerage Fee (0.1%):", calcTaxesVal, Theme.TXT_SECONDARY));
         calcCard.add(buildBreakdownRow("Net Required Capital:", calcNetRequiredVal, Theme.ACCENT));
         calcCard.add(buildBreakdownRow("Remaining Cash Post-Trade:", calcRemainingCashVal, Theme.GAIN));
         card.add(calcCard);
@@ -1080,8 +1089,9 @@ public class TradePanel extends BasePanel {
         styleToggleBtn(btnTypeMarket, "Market".equals(type));
         styleToggleBtn(btnTypeLimit, "Limit".equals(type));
         styleToggleBtn(btnTypeSlm, "SL-M".equals(type));
+        styleToggleBtn(btnTypeTp, "TP".equals(type));
 
-        boolean needsPrice = !"Market".equals(type);
+        boolean needsPrice = "Limit".equals(type);   // SL-M uses the Stop-Loss field, TP uses the Target field
         txtPrice.setEnabled(needsPrice);
         if (!needsPrice && currentAsset != null) {
             txtPrice.setText(String.format(Locale.US, "%.2f", currentAsset.getPrice()));
@@ -1345,8 +1355,12 @@ public class TradePanel extends BasePanel {
                 order = tradingService.placeOrder(user, currentAsset, currentSide, quantity);
             } else if ("Limit".equals(currentOrderType)) {
                 order = tradingService.placeOrder(user, currentAsset, currentSide, quantity, price);
+            } else if ("SL-M".equals(currentOrderType)) {
+                order = tradingService.placeOrder(user,
+                        new StopLossOrder(currentAsset, currentSide, quantity, parseField(txtStopLoss, stopLossPrice)));
             } else {
-                order = tradingService.placeOrder(user, new StopLossOrder(currentAsset, currentSide, quantity, stopLossPrice));
+                order = tradingService.placeOrder(user,
+                        new TakeProfitOrder(currentAsset, currentSide, quantity, parseField(txtTarget, targetPrice)));
             }
 
             if (order.getStatus() == OrderStatus.FILLED) {
@@ -1375,9 +1389,27 @@ public class TradePanel extends BasePanel {
         refresh();
     }
 
+    private static double parseField(JTextField field, double fallback) {
+        try {
+            return Double.parseDouble(field.getText().replaceAll("[^0-9.]", ""));
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    /** The price used for the cost preview: buyers pay the ASK, sellers get the BID. */
     private double getEffectivePrice() {
-        if ("Market".equals(currentOrderType) || currentAsset == null) {
-            return currentAsset != null ? currentAsset.getPrice() : 100.0;
+        if (currentAsset == null) {
+            return 100.0;
+        }
+        if ("Market".equals(currentOrderType)) {
+            return currentSide == OrderSide.BUY ? currentAsset.getAsk() : currentAsset.getBid();
+        }
+        if ("SL-M".equals(currentOrderType)) {
+            return parseField(txtStopLoss, currentAsset.getPrice());
+        }
+        if ("TP".equals(currentOrderType)) {
+            return parseField(txtTarget, currentAsset.getPrice());
         }
         try {
             return Double.parseDouble(txtPrice.getText().replaceAll("[^0-9.]", ""));
@@ -1411,7 +1443,7 @@ public class TradePanel extends BasePanel {
 
         double price = getEffectivePrice();
         double gross = price * quantity;
-        double taxes = gross * 0.001; // 0.1% statutory taxes/SEBI
+        double taxes = tradingService.calculateFee(gross); // brokerage fee from the FeeCalculator strategy
         double netRequired = (currentSide == OrderSide.BUY) ? (gross + taxes) : (gross - taxes);
 
         User user = authService.getCurrentUser();
@@ -1422,7 +1454,8 @@ public class TradePanel extends BasePanel {
         String cur = isIndian ? "₹" : "$";
 
         calcGrossVal.setText(String.format(Locale.US, "%s%,.2f", cur, gross));
-        calcBrokerageVal.setText(cur + "0.00 (Zero Fee)");
+        double slipPct = tradingService.getExecutionModel().estimateCostPercent(currentAsset, quantity);
+        calcBrokerageVal.setText(String.format(Locale.US, "~%s%,.2f (%.3f%%)", cur, gross * slipPct / 100.0, slipPct));
         calcTaxesVal.setText(String.format(Locale.US, "%s%,.2f", cur, taxes));
         calcNetRequiredVal.setText(String.format(Locale.US, "%s%,.2f", cur, netRequired));
         calcRemainingCashVal.setText(String.format(Locale.US, "%s%,.2f", cur, remaining));
@@ -1485,6 +1518,11 @@ public class TradePanel extends BasePanel {
         recalculateTicket();
     }
 
+    /** Connects the candlestick chart to real market history. */
+    public void setChartService(ChartService chartService) {
+        chartPanel.setChartService(chartService);
+    }
+
     @Override
     public void refresh() {
         User user = authService.getCurrentUser();
@@ -1534,6 +1572,7 @@ public class TradePanel extends BasePanel {
 
         private final DepthLadderTable bidsTable = new DepthLadderTable(true);
         private final DepthLadderTable asksTable = new DepthLadderTable(false);
+        private final OrderBookSimulator orderBook = new OrderBookSimulator();
 
         Level2DepthPanel() {
             setLayout(new BorderLayout(0, 4));
@@ -1550,7 +1589,7 @@ public class TradePanel extends BasePanel {
             title.setFont(Theme.HEADING.deriveFont(Font.BOLD, 11f));
             title.setForeground(Color.WHITE);
 
-            JLabel sub = new JLabel("5-Tick Depth");
+            JLabel sub = new JLabel("5 levels around the real bid / ask");
             sub.setFont(Theme.MICRO);
             sub.setForeground(Theme.TXT_MUTED);
 
@@ -1605,40 +1644,48 @@ public class TradePanel extends BasePanel {
 
         void updateForAsset(Asset a) {
             if (a == null) return;
-            double p = a.getPrice();
             boolean isIndian = List.of("RELIANCE", "TCS", "INFY", "HDFCBANK").contains(a.getSymbol().toUpperCase());
             String cur = isIndian ? "₹" : "$";
-            double spread = Math.max(0.05, Math.round(p * 0.00015 * 20.0) / 20.0);
-            spreadLbl.setText(String.format(Locale.US, "Spread: %s%,.2f (0.01%%)", cur, spread));
-            bidsTable.repopulate(p - spread / 2.0, -0.30, cur);
-            asksTable.repopulate(p + spread / 2.0, 0.30, cur);
+            // Built around the REAL bid/ask of the asset (see OrderBookSimulator)
+            OrderBookSimulator.OrderBook book = orderBook.simulate(a, 5);
+            double spread = book.spread();
+            spreadLbl.setText(String.format(Locale.US, "Spread: %s%,.4f (%.3f%%)", cur, spread, spread / a.getPrice() * 100));
+
+            double bidTotal = 0;
+            double askTotal = 0;
+            double maxSize = 0;
+            for (OrderBookSimulator.Level l : book.bids()) { bidTotal += l.size(); maxSize = Math.max(maxSize, l.size()); }
+            for (OrderBookSimulator.Level l : book.asks()) { askTotal += l.size(); maxSize = Math.max(maxSize, l.size()); }
+            bidRatio = bidTotal / (bidTotal + askTotal);
+            ratioLbl.setText(String.format(Locale.US, "Bids: %.1f%%  vs  Asks: %.1f%%", bidRatio * 100, 100 - bidRatio * 100));
+            bidsTable.repopulate(book.bids(), maxSize, cur);
+            asksTable.repopulate(book.asks(), maxSize, cur);
             repaint();
         }
     }
 
     private static class DepthLadderTable extends JPanel {
         private final boolean isBids;
-        private final List<DepthRow> rows = new ArrayList<>();
-
-        record DepthRow(String ordersQty, String total, double price, double depthPct) {}
 
         DepthLadderTable(boolean isBids) {
             this.isBids = isBids;
             setLayout(new GridLayout(6, 1, 0, 1));
             setOpaque(false);
-            repopulate(100.0, isBids ? -0.30 : 0.30, "$");
         }
 
-        void repopulate(double basePrice, double step, String cur) {
+        private static String qty(double size) {
+            return size < 100 ? String.format(Locale.US, "%,.3f", size) : String.format(Locale.US, "%,.0f", size);
+        }
+
+        void repopulate(List<OrderBookSimulator.Level> levels, double maxSize, String cur) {
             removeAll();
-            rows.clear();
 
             // Header Row
             JPanel hRow = new JPanel(new GridLayout(1, 3));
             hRow.setOpaque(false);
-            JLabel h1 = new JLabel(isBids ? "Orders / Qty" : "Ask Price (" + cur + ")", isBids ? SwingConstants.LEFT : SwingConstants.LEFT);
+            JLabel h1 = new JLabel(isBids ? "Qty" : "Ask Price (" + cur + ")", SwingConstants.LEFT);
             JLabel h2 = new JLabel("Total", SwingConstants.CENTER);
-            JLabel h3 = new JLabel(isBids ? "Bid Price (" + cur + ")" : "Qty / Orders", SwingConstants.RIGHT);
+            JLabel h3 = new JLabel(isBids ? "Bid Price (" + cur + ")" : "Qty", SwingConstants.RIGHT);
             for (JLabel l : List.of(h1, h2, h3)) {
                 l.setFont(Theme.MICRO.deriveFont(Font.BOLD, 8f));
                 l.setForeground(Theme.TXT_MUTED);
@@ -1646,19 +1693,11 @@ public class TradePanel extends BasePanel {
             }
             add(hRow);
 
-            int runningTotal = 0;
-            int[] qtys = isBids ? new int[]{1420, 2850, 5100, 3210, 7850} : new int[]{1180, 3420, 4950, 4660, 8910};
-            int[] ords = isBids ? new int[]{4, 9, 14, 11, 21} : new int[]{3, 8, 12, 7, 16};
-
-            for (int i = 0; i < 5; i++) {
-                runningTotal += qtys[i];
-                double rowP = basePrice + i * step;
-                double frac = Math.min(1.0, (double) qtys[i] / 8910.0);
-                String oq = ords[i] + " · " + String.format(Locale.US, "%,d", qtys[i]);
-                String tot = String.format(Locale.US, "%,d", runningTotal);
-
-                DepthRow r = new DepthRow(oq, tot, rowP, frac);
-                rows.add(r);
+            double runningTotal = 0;
+            for (OrderBookSimulator.Level level : levels) {
+                runningTotal += level.size();
+                double frac = maxSize > 0 ? level.size() / maxSize : 0;
+                String price = String.format(Locale.US, "%,.2f", level.price());
 
                 JPanel rowPanel = new JPanel(new GridLayout(1, 3)) {
                     @Override
@@ -1667,9 +1706,8 @@ public class TradePanel extends BasePanel {
                         Graphics2D g2 = (Graphics2D) g.create();
                         int w = getWidth();
                         int h = getHeight();
-                        int barW = (int) (w * r.depthPct());
-                        Color fillColor = isBids ? new Color(34, 197, 94, 25) : new Color(239, 68, 68, 25);
-                        g2.setColor(fillColor);
+                        int barW = (int) (w * frac);
+                        g2.setColor(isBids ? new Color(34, 197, 94, 25) : new Color(239, 68, 68, 25));
                         if (isBids) {
                             g2.fillRect(w - barW, 0, barW, h);
                         } else {
@@ -1680,15 +1718,15 @@ public class TradePanel extends BasePanel {
                 };
                 rowPanel.setOpaque(false);
 
-                JLabel l1 = new JLabel(isBids ? r.ordersQty() : String.format(Locale.US, "%,.2f", r.price()));
+                JLabel l1 = new JLabel(isBids ? qty(level.size()) : price);
                 l1.setFont(Theme.MONO_TINY.deriveFont(8.5f));
                 l1.setForeground(isBids ? Color.WHITE : Theme.LOSS);
 
-                JLabel l2 = new JLabel(r.total(), SwingConstants.CENTER);
+                JLabel l2 = new JLabel(qty(runningTotal), SwingConstants.CENTER);
                 l2.setFont(Theme.MONO_TINY.deriveFont(8.5f));
                 l2.setForeground(Theme.TXT_MUTED);
 
-                JLabel l3 = new JLabel(isBids ? String.format(Locale.US, "%,.2f", r.price()) : r.ordersQty(), SwingConstants.RIGHT);
+                JLabel l3 = new JLabel(isBids ? price : qty(level.size()), SwingConstants.RIGHT);
                 l3.setFont(Theme.MONO_TINY.deriveFont(8.5f));
                 l3.setForeground(isBids ? Theme.GAIN : Color.WHITE);
 
@@ -1739,7 +1777,7 @@ public class TradePanel extends BasePanel {
     // TABLE MODELS
     // -------------------------------------------------------------------------
     private static class OpenOrdersTableModel extends AbstractTableModel {
-        private final String[] cols = {"Time / ID", "Symbol", "Side", "Product", "Qty", "Limit Price", "LTP", "Status", "Action"};
+        private final String[] cols = {"Time / ID", "Symbol", "Side", "Product", "Qty", "Trigger", "LTP", "Status", "Action"};
         private final List<Order> orders = new ArrayList<>();
 
         void setOrders(List<Order> list) {
@@ -1764,9 +1802,9 @@ public class TradePanel extends BasePanel {
                 case 2 -> o.getSide();
                 case 3 -> "CNC";
                 case 4 -> o.getQuantity();
-                case 5 -> Formatter.money(o.getAsset().getPrice());
+                case 5 -> o.getConditionText();
                 case 6 -> Formatter.money(o.getAsset().getPrice());
-                case 7 -> "Pending Trigger";
+                case 7 -> "Waiting (" + o.getClass().getSimpleName().replace("Order", "") + ")";
                 case 8 -> "Cancel";
                 default -> "";
             };
@@ -1774,7 +1812,7 @@ public class TradePanel extends BasePanel {
     }
 
     private static class ExecHistoryTableModel extends AbstractTableModel {
-        private final String[] cols = {"Fill Time", "Symbol", "Side", "Filled Qty", "Avg Exec Price", "Total Value", "Status"};
+        private final String[] cols = {"Fill Time", "Symbol", "Side", "Filled Qty", "Avg Exec Price", "Total Value", "Realized P&L"};
         private final List<Transaction> txs = new ArrayList<>();
         private static final DateTimeFormatter dtf = DateTimeFormatter.ofPattern("HH:mm:ss");
 
@@ -1798,7 +1836,7 @@ public class TradePanel extends BasePanel {
                 case 3 -> t.getQuantity();
                 case 4 -> Formatter.money(t.getPrice());
                 case 5 -> Formatter.money(total);
-                case 6 -> "100% FILLED";
+                case 6 -> t.getSide() == OrderSide.SELL ? Formatter.signedMoney(t.getRealizedPnl()) : "-";
                 default -> "";
             };
         }
