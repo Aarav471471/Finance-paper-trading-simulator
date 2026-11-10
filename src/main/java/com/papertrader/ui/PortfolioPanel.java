@@ -1,5 +1,7 @@
 package com.papertrader.ui;
 
+import com.papertrader.service.AnalyticsService;
+import com.papertrader.service.ChartService;
 import java.util.HashMap;
 import com.papertrader.interfaces.Exportable;
 import com.papertrader.model.Asset;
@@ -113,6 +115,8 @@ public class PortfolioPanel extends BasePanel {
 
     // Row 2: Performance Chart & Asset Allocation Donut
     private PortfolioPerformanceChart performanceChart;
+    private AnalyticsService analytics;
+    private double startingCash = 100000.0;
     private final AssetAllocationCard allocationCard = new AssetAllocationCard();
 
     // Row 3: Holdings Table
@@ -626,6 +630,15 @@ public class PortfolioPanel extends BasePanel {
     // DATA REFRESH LOGIC
     // =========================================================================
 
+    /** Real history for the performance chart (account values + SPY benchmark). */
+    public void setDataSources(AnalyticsService analytics, ChartService charts, double startingCash) {
+        this.analytics = analytics;
+        this.startingCash = startingCash;
+        if (performanceChart != null) {
+            performanceChart.setDataSources(analytics, charts, marketService);
+        }
+    }
+
     @Override
     public void refresh() {
         User user = authService.getCurrentUser();
@@ -664,7 +677,7 @@ public class PortfolioPanel extends BasePanel {
 
         // 2. Update Performance Chart
         if (performanceChart != null) {
-            performanceChart.updateData(user, portfolioService, marketService, tradingService, 100000.0);
+            performanceChart.updateData(user, portfolioService, marketService, tradingService, startingCash);
         }
 
         // 3. Build HoldingRowData List

@@ -42,8 +42,8 @@ public class StatCard extends JPanel {
     private boolean isFeatured = false; // Blue ring highlight for Net Worth
     private boolean hovered = false;
 
-    // Mini sparkline data (relative Y offsets 0..10)
-    private int[] sparklineY = {9, 8, 8, 5, 2};
+    // Mini sparkline (relative Y offsets 0..10). Empty = not drawn; only real values are shown.
+    private int[] sparklineY = new int[0];
 
     public StatCard(String title) {
         this(title, IconType.GENERIC);
@@ -101,15 +101,29 @@ public class StatCard extends JPanel {
         if (changeValue > 0) {
             this.pillTextColor = Theme.GAIN;
             this.pillBgColor = isFeatured ? Theme.ACCENT_BG : Theme.GREEN_BG;
-            this.sparklineY = new int[]{10, 8, 9, 4, 1}; // Upward trend
         } else if (changeValue < 0) {
             this.pillTextColor = Theme.LOSS;
             this.pillBgColor = Theme.RED_BG;
-            this.sparklineY = new int[]{2, 4, 6, 8, 11}; // Downward trend
         } else {
             this.pillTextColor = Theme.TXT_MUTED;
             this.pillBgColor = new Color(100, 116, 139, 25);
-            this.sparklineY = new int[]{6, 6, 5, 6, 6}; // Flat
+        }
+        repaint();
+    }
+
+    /** Draws the small trend line from real values (e.g. the last account values). */
+    public void setSparkline(java.util.List<Double> values) {
+        if (values == null || values.size() < 2) {
+            sparklineY = new int[0];
+        } else {
+            int n = Math.min(24, values.size());
+            java.util.List<Double> last = values.subList(values.size() - n, values.size());
+            double min = java.util.Collections.min(last);
+            double max = java.util.Collections.max(last);
+            sparklineY = new int[n];
+            for (int i = 0; i < n; i++) {
+                sparklineY[i] = max == min ? 6 : (int) Math.round(11 - (last.get(i) - min) / (max - min) * 10);
+            }
         }
         repaint();
     }
@@ -203,6 +217,10 @@ public class StatCard extends JPanel {
         g2.setStroke(new BasicStroke(1.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
 
         int n = sparklineY.length;
+        if (n < 2) {
+            g2.dispose();
+            return;
+        }
         int[] xs = new int[n];
         int[] ys = new int[n];
         for (int i = 0; i < n; i++) {

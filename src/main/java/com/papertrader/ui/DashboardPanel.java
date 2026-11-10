@@ -3,7 +3,9 @@ package com.papertrader.ui;
 import com.papertrader.model.Asset;
 import com.papertrader.model.Holding;
 import com.papertrader.model.User;
+import com.papertrader.service.AnalyticsService;
 import com.papertrader.service.AuthService;
+import com.papertrader.service.ChartService;
 import com.papertrader.service.MarketService;
 import com.papertrader.service.PortfolioService;
 import com.papertrader.service.TradingService;
@@ -72,6 +74,7 @@ public class DashboardPanel extends BasePanel {
     private final WatchlistPanel watchlistPanel;
     private final Portfolio3DView portfolio3D = new Portfolio3DView();
     private final PortfolioPerformanceChart performanceChart = new PortfolioPerformanceChart();
+    private AnalyticsService analytics;
     private final OrderTerminalPanel orderTerminal;
     private final ExecutionLedgerPanel ledgerPanel;
     private final TerminalFooter terminalFooter = new TerminalFooter();
@@ -289,6 +292,12 @@ public class DashboardPanel extends BasePanel {
         return card;
     }
 
+    /** Real history for the chart and the small trend lines. */
+    public void setDataSources(AnalyticsService analytics, ChartService charts) {
+        this.analytics = analytics;
+        performanceChart.setDataSources(analytics, charts, marketService);
+    }
+
     @Override
     public void refresh() {
         User user = authService.getCurrentUser();
@@ -306,11 +315,21 @@ public class DashboardPanel extends BasePanel {
 
         // 1. Stat Cards
         cashCard.setValue(Formatter.money(cash), Color.WHITE);
-        cashCard.setChangePill("+1.8%", 1.8);
+        double cashShare = netWorth > 0 ? cash / netWorth * 100.0 : 0.0;
+        cashCard.setChangePill(String.format("%.0f%% of total", cashShare), 0);
         cashCard.setNote("Available trading balance", Theme.TXT_MUTED);
 
         investedCard.setValue(Formatter.money(invested), Color.WHITE);
-        investedCard.setChangePill("+3.42%", 3.42);
+        // real change of the holdings since yesterday's close
+        double todayChange = 0;
+        for (Holding h : user.getPortfolio().getHoldings()) {
+            Asset a = marketService.findBySymbol(h.getSymbol()).orElse(null);
+            if (a != null && a.getPreviousClose() > 0) {
+                todayChange += (a.getPrice() - a.getPreviousClose()) * h.getQuantity();
+            }
+        }
+        double todayPct = invested - todayChange > 0 ? todayChange / (invested - todayChange) * 100.0 : 0.0;
+        investedCard.setChangePill(String.format("%s%.2f%% today", todayPct >= 0 ? "+" : "", todayPct), todayPct);
         investedCard.setNote("Current market value", Theme.TXT_MUTED);
 
         netWorthCard.setValue(Formatter.money(netWorth), Color.WHITE);
@@ -320,6 +339,16 @@ public class DashboardPanel extends BasePanel {
         profitCard.setValue(Formatter.signedMoney(pnl), Theme.colorFor(pnl));
         profitCard.setChangePill(String.format("%s%.2f%%", pnl >= 0 ? "+" : "", pnlPct), pnl);
         profitCard.setNote("Overall simulated return", Theme.TXT_MUTED);
+
+        if (analytics != null) {
+            List<Double> values = new ArrayList<>();
+            analytics.getEquityCurve(user).forEach(p -> values.add(p.value()));
+            values.add(netWorth);
+            netWorthCard.setSparkline(values);
+            List<Double> profits = new ArrayList<>();
+            values.forEach(v -> profits.add(v - startingCash));
+            profitCard.setSparkline(profits);
+        }
 
         // 2. 3D Matrix
         List<Portfolio3DView.Bar> bars = new ArrayList<>();

@@ -80,6 +80,7 @@ public class MainFrame extends JFrame {
 
         TradePanel tradePanel = new TradePanel(authService, marketService, tradingService, portfolioService);
         tradePanel.setChartService(ctx.charts());
+        tradePanel.setMarketData(ctx.marketData());
         StockDetailsPanel stockDetailsPanel = new StockDetailsPanel(authService, marketService,
                 tradingService, portfolioService, target -> handleNavigation(target, tradePanel, null));
         stockDetailsPanel.setChartService(ctx.charts());
@@ -89,12 +90,15 @@ public class MainFrame extends JFrame {
 
         DashboardPanel dashboardPanel = new DashboardPanel(authService, marketService, portfolioService,
                 tradingService, startingCash, navHandler);
+        dashboardPanel.setDataSources(ctx.analytics(), ctx.charts());
 
         pages.put("Dashboard", dashboardPanel);
         pages.put("Markets", new MarketPanel(marketService, navHandler));
         pages.put("Stock Details", stockDetailsPanel);
         pages.put("Trade", tradePanel);
-        pages.put("Portfolio", new PortfolioPanel(authService, marketService, portfolioService, tradingService, navHandler));
+        PortfolioPanel portfolioPanel = new PortfolioPanel(authService, marketService, portfolioService, tradingService, navHandler);
+        portfolioPanel.setDataSources(ctx.analytics(), ctx.charts(), startingCash);
+        pages.put("Portfolio", portfolioPanel);
         pages.put("History", new HistoryPanel(authService, tradingService, marketService, portfolioService, navHandler));
         pages.put("Analytics", new AnalyticsPanel(authService, portfolioService, tradingService, ctx.analytics(), startingCash));
         pages.put("Backtest", new BacktestPanel(marketService, ctx.charts(), ctx.fees()));
