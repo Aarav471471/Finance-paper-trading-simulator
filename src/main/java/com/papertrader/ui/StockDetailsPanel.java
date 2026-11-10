@@ -94,8 +94,8 @@ public class StockDetailsPanel extends BasePanel {
 
     private final JLabel assetTitle = new JLabel("Reliance Industries Ltd.");
     private final JLabel assetSector = new JLabel("Oil & Gas / Conglomerates");
-    private final JLabel heroCmp = new JLabel("₹2,945.50");
-    private final JLabel heroDelta = new JLabel("+68.25 (+2.37%)");
+    private final JLabel heroCmp = new JLabel("N/A");
+    private final JLabel heroDelta = new JLabel("-");
     private final JLabel heroTickTime = new JLabel("Live Tick: 14:32:05 IST");
     private final JButton btnWatchlist = new JButton("★ Watchlist");
 
@@ -117,7 +117,7 @@ public class StockDetailsPanel extends BasePanel {
     private final JLabel statPrevClose = new JLabel("2,877.25");
     private final JLabel statOpen = new JLabel("2,910.00");
     private final JLabel statMcap = new JLabel("19.92 Lakh Cr");
-    private final JLabel statVol = new JLabel("6.42M");
+    private final JLabel statVol = new JLabel("N/A");
     private final JLabel statPe = new JLabel("24.8");
     private final JLabel statBook = new JLabel("1,180.40");
     private final JLabel statEps = new JLabel("104.22");
