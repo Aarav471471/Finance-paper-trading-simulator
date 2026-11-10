@@ -1,10 +1,8 @@
 package com.papertrader.ui;
 
 import com.papertrader.interfaces.PriceFeed;
+import com.papertrader.service.AppContext;
 import com.papertrader.service.AuthService;
-import com.papertrader.service.MarketService;
-import com.papertrader.service.PortfolioService;
-import com.papertrader.service.TradingService;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -40,7 +38,8 @@ import java.util.function.Consumer;
  * Terminal Main Window Shell.
  * Features fixed 220px sidebar matching the production terminal mockup:
  * - Brand header with view_in_ar glyph & v4.2 PRO badge
- * - Navigation items (Dashboard, Markets, Trade, Portfolio, History)
+ * - Navigation items (Dashboard, Markets, Trade, Portfolio, History,
+ *   Analytics, Backtest, Auto-Trade, Leaderboard)
  * - Live Feeds connection card (Binance & Yahoo Fin connected)
  * - Settings & Help links
  * - User Profile with SIM ACTIVE & PAPER badges
@@ -50,7 +49,9 @@ public class MainFrame extends JFrame {
     private static final String LOGIN = "login";
     private static final String APP = "app";
 
+    private final AppContext ctx;
     private final AuthService authService;
+    private int secondsSinceSnapshot = 0;
     private final CardLayout rootCards = new CardLayout();
     private final JPanel root = new JPanel(rootCards);
     private final CardLayout pageCards = new CardLayout();
@@ -65,11 +66,17 @@ public class MainFrame extends JFrame {
     private final PriceFeed priceFeed;
     private BasePanel currentPage;
 
-    public MainFrame(AuthService authService, MarketService marketService, TradingService tradingService,
-                     PortfolioService portfolioService, PriceFeed priceFeed, double startingCash) {
+    /** @param ctx all the services, built once in App (the composition root) */
+    public MainFrame(AppContext ctx) {
         super("PaperTrader 3D - Production Simulation Terminal");
-        this.authService = authService;
-        this.priceFeed = priceFeed;
+        this.ctx = ctx;
+        this.authService = ctx.auth();
+        this.priceFeed = ctx.priceFeed();
+        AuthService authService = ctx.auth();
+        var marketService = ctx.market();
+        var tradingService = ctx.trading();
+        var portfolioService = ctx.portfolio();
+        double startingCash = ctx.startingCash();
 
         TradePanel tradePanel = new TradePanel(authService, marketService, tradingService, portfolioService);
         StockDetailsPanel stockDetailsPanel = new StockDetailsPanel(authService, marketService,
@@ -86,6 +93,11 @@ public class MainFrame extends JFrame {
         pages.put("Trade", tradePanel);
         pages.put("Portfolio", new PortfolioPanel(authService, marketService, portfolioService, tradingService, navHandler));
         pages.put("History", new HistoryPanel(authService, tradingService, marketService, portfolioService, navHandler));
+        pages.put("Analytics", new AnalyticsPanel(authService, portfolioService, tradingService, ctx.analytics(), startingCash));
+        pages.put("Backtest", new BacktestPanel(marketService, ctx.charts(), ctx.fees()));
+        pages.put("Auto-Trade", new AutoTradePanel(authService, marketService, ctx.bots()));
+        pages.put("Leaderboard", new LeaderboardPanel(authService, ctx.leaderboard(), tradingService, ctx.analytics(),
+                ctx.bots(), startingCash));
 
         root.add(new LoginPanel(authService, this::showApp), LOGIN);
         root.add(buildAppShell(), APP);
@@ -243,12 +255,14 @@ public class MainFrame extends JFrame {
         bottom.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.BORDER_CUSTOM),
                 BorderFactory.createEmptyBorder(6, 8, 8, 8)));
-        bottom.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
+        bottom.setMaximumSize(new Dimension(Integer.MAX_VALUE, 134));
 
         // Settings link
         bottom.add(createBottomLink("⚙ Settings", () -> {}));
         bottom.add(Box.createVerticalStrut(2));
         bottom.add(createBottomLink("? Help & Support", () -> {}));
+        bottom.add(Box.createVerticalStrut(2));
+        bottom.add(createBottomLink("↪ Log out", this::logout));
         bottom.add(Box.createVerticalStrut(6));
 
         // User Profile Block
@@ -327,6 +341,7 @@ public class MainFrame extends JFrame {
         String uname = authService.getCurrentUser().getUsername();
         usernameLabel.setText(uname);
         userAvatarLabel.setText(uname.length() >= 2 ? uname.substring(0, 2).toUpperCase() : uname.toUpperCase());
+        ctx.analytics().recordSnapshot(authService.getCurrentUser());
         rootCards.show(root, APP);
         showPage("Dashboard");
     }
@@ -368,7 +383,7 @@ public class MainFrame extends JFrame {
     private void refreshCurrentPage() {
         String st = priceFeed.getStatusText();
         boolean hasBinance = st.toLowerCase().contains("binance: live");
-        boolean hasYahoo = st.toLowerCase().contains("yahoo");
+        boolean hasYahoo = st.toLowerCase().contains("yahoo finance: live");
 
         binanceStatus.setText(hasBinance ? "Connected" : "Simulated");
         binanceStatus.setForeground(hasBinance ? Theme.GAIN : Theme.WARNING);
@@ -376,12 +391,19 @@ public class MainFrame extends JFrame {
         yahooStatus.setText(hasYahoo ? "Connected" : "Simulated");
         yahooStatus.setForeground(hasYahoo ? Theme.GAIN : Theme.WARNING);
 
+        // every 15 seconds, save the account value for the Analytics page
+        if (authService.isLoggedIn() && ++secondsSinceSnapshot >= 15) {
+            secondsSinceSnapshot = 0;
+            ctx.analytics().recordSnapshot(authService.getCurrentUser());
+        }
+
         if (authService.isLoggedIn() && currentPage != null) {
             currentPage.refresh();
         }
     }
 
     private void logout() {
+        ctx.bots().stopAll(authService.getCurrentUser());
         authService.logout();
         currentPage = null;
         rootCards.show(root, LOGIN);
@@ -484,6 +506,28 @@ public class MainFrame extends JFrame {
                     g2.drawOval(cx - 6, cy - 6, 12, 12);
                     g2.drawLine(cx, cy - 3, cx, cy);
                     g2.drawLine(cx, cy, cx + 3, cy + 1);
+                }
+                case "Analytics" -> {
+                    g2.drawLine(cx - 6, cy + 6, cx - 6, cy + 1);
+                    g2.drawLine(cx - 2, cy + 6, cx - 2, cy - 3);
+                    g2.drawLine(cx + 2, cy + 6, cx + 2, cy - 1);
+                    g2.drawLine(cx + 6, cy + 6, cx + 6, cy - 6);
+                }
+                case "Backtest" -> {
+                    g2.drawArc(cx - 6, cy - 6, 12, 12, 60, 270);
+                    g2.drawLine(cx + 3, cy - 6, cx + 4, cy - 2);
+                    g2.drawLine(cx + 4, cy - 2, cx + 0, cy - 2);
+                }
+                case "Auto-Trade" -> {
+                    g2.drawRoundRect(cx - 6, cy - 3, 12, 9, 3, 3);
+                    g2.drawLine(cx, cy - 3, cx, cy - 6);
+                    g2.fillOval(cx - 3, cy, 2, 2);
+                    g2.fillOval(cx + 2, cy, 2, 2);
+                }
+                case "Leaderboard" -> {
+                    g2.drawRect(cx - 6, cy, 4, 6);
+                    g2.drawRect(cx - 2, cy - 5, 4, 11);
+                    g2.drawRect(cx + 2, cy - 2, 4, 8);
                 }
                 default -> g2.drawOval(cx - 3, cy - 3, 6, 6);
             }
