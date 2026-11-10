@@ -15,7 +15,7 @@ public abstract class Asset {
     private final String symbol;
     private final String name;
     private double price;
-    private final double openingPrice;   // price when the app started, used for "change %"
+    private double previousClose;   // yesterday's closing price, used for "change %"
 
     protected Asset(String symbol, String name, double price) {
         if (price <= 0) {
@@ -24,7 +24,7 @@ public abstract class Asset {
         this.symbol = symbol;
         this.name = name;
         this.price = price;
-        this.openingPrice = price;
+        this.previousClose = price;
     }
 
     // ---- Abstract methods: every subclass MUST give its own answer (runtime polymorphism) ----
@@ -52,8 +52,15 @@ public abstract class Asset {
         return price;
     }
 
-    public double getOpeningPrice() {
-        return openingPrice;
+    public double getPreviousClose() {
+        return previousClose;
+    }
+
+    /** Set by the live price feed when the real previous close is known. */
+    public void setPreviousClose(double previousClose) {
+        if (previousClose > 0) {
+            this.previousClose = previousClose;
+        }
     }
 
     public void setPrice(double newPrice) {
@@ -63,9 +70,9 @@ public abstract class Asset {
         this.price = newPrice;
     }
 
-    /** Percentage change since the app started. */
+    /** Percentage change since the previous close (like every trading app shows). */
     public double getChangePercent() {
-        return (price - openingPrice) / openingPrice * 100.0;
+        return (price - previousClose) / previousClose * 100.0;
     }
 
     @Override

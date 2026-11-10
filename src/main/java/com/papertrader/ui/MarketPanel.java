@@ -33,7 +33,7 @@ public class MarketPanel extends BasePanel {
     private final Map<String, Integer> direction = new HashMap<>();
 
     public MarketPanel(MarketService marketService) {
-        super("Market", "Live simulated prices. Click a row to see its chart.");
+        super("Market", "Live market prices. Change % is since the previous close. Click a row for its chart.");
         this.marketService = marketService;
 
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
