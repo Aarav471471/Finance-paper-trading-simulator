@@ -45,6 +45,9 @@ package model {
   class LimitOrder {
     - limitPrice : double
   }
+  class TakeProfitOrder {
+    - targetPrice : double
+  }
   class StopLossOrder {
     - stopPrice : double
   }
@@ -128,6 +131,41 @@ package interfaces {
   }
 }
 
+package "execution / strategy / backtest / analytics / bot" as adv {
+  interface ExecutionModel {
+    + getFillPrice(asset, side, qty) : double
+  }
+  class RealisticExecutionModel {
+    - maxSlippagePercent : double
+  }
+  class PerfectExecutionModel {
+  }
+  interface TradingStrategy {
+    + decide(candles, holding) : Signal
+  }
+  class SmaCrossoverStrategy {
+  }
+  class RsiStrategy {
+  }
+  class BuyAndHoldStrategy {
+  }
+  class PriceRuleStrategy {
+  }
+  class BacktestEngine {
+    + step() : boolean
+    + getReport() : PerformanceReport
+  }
+  class PerformanceAnalyzer {
+    + {static} analyze(equity, profits) : PerformanceReport
+  }
+  class TradingBot {
+    - position : int
+  }
+  class BotService {
+    + runBot(bot)
+  }
+}
+
 package service {
   class TradingService {
     - pendingOrders : Map<Order, User>
@@ -182,6 +220,7 @@ Asset <|-- ETF
 Order <|-- MarketOrder
 Order <|-- LimitOrder
 Order <|-- StopLossOrder
+Order <|-- TakeProfitOrder
 Order --> "1" Asset
 Order --> OrderSide
 Order --> OrderStatus
@@ -211,6 +250,18 @@ InMemoryTransactionRepository ..|> TransactionRepository
 FileTransactionRepository --|> InMemoryTransactionRepository
 
 TradingService ..|> PriceListener
+TradingService --> ExecutionModel
+RealisticExecutionModel ..|> ExecutionModel
+PerfectExecutionModel ..|> ExecutionModel
+SmaCrossoverStrategy ..|> TradingStrategy
+RsiStrategy ..|> TradingStrategy
+BuyAndHoldStrategy ..|> TradingStrategy
+PriceRuleStrategy ..|> TradingStrategy
+BacktestEngine --> TradingStrategy
+BacktestEngine ..> PerformanceAnalyzer
+TradingBot --> TradingStrategy
+BotService o-- TradingBot
+BotService --> TradingService
 MarketService ..|> PriceListener
 TradingService --> FeeCalculator
 TradingService --> Repository

@@ -27,7 +27,7 @@ Every concept below points to the exact file to open during the viva.
 | Parent | Children |
 |---|---|
 | `Asset` | `Stock`, `Crypto`, `ETF` |
-| `Order` | `MarketOrder`, `LimitOrder`, `StopLossOrder` |
+| `Order` | `MarketOrder`, `LimitOrder`, `StopLossOrder`, `TakeProfitOrder` |
 | `SimulatorException` (extends `Exception`) | `InsufficientFundsException`, `InvalidOrderException`, `AuthException` |
 | `InMemoryUserRepository` | `FileUserRepository` (calls `super.save()` then writes the file) |
 | `BasePanel` (extends `JPanel`) | `DashboardPanel`, `MarketPanel`, `TradePanel`, `PortfolioPanel`, `HistoryPanel` |
@@ -49,6 +49,9 @@ Every concept below points to the exact file to open during the viva.
 - `TradingService.placeOrder()` and `onPriceUpdate()` call `order.canExecute(price)` on an `Order` reference. The object may be a `MarketOrder`, `LimitOrder` or `StopLossOrder`.
 - `SimulatedPriceFeed.tick()` calls `asset.getVolatility()`, so Crypto moves more than ETF.
 - `LivePriceFeed` calls `provider.fetchQuotes(...)` on a `QuoteProvider` reference; Binance, Finnhub or Yahoo code runs.
+- `TradingService.execute()` calls `order.adjustFillPrice(fill)`: only `LimitOrder` overrides it, so a limit order never fills worse than its limit.
+- `BacktestEngine.step()` and `BotService.runBot()` call `strategy.decide(...)` on a `TradingStrategy` reference: SMA, RSI, Buy & Hold or Price Rule code runs.
+- `TradingService` calls `executionModel.getFillPrice(...)`: realistic (spread + slippage) in the app, perfect in tests.
 - `App` holds a `PriceFeed` reference that is a `LivePriceFeed` or a `SimulatedPriceFeed`; the rest of the app can't tell.
 - `MainFrame.refreshCurrentPage()` calls `currentPage.refresh()` on a `BasePanel` reference.
 - `LineChartPanel.paintComponent()` overrides Swing's method; Swing calls our version.
@@ -64,6 +67,10 @@ Every concept below points to the exact file to open during the viva.
 | `Repository<T, ID>` (generic) | `InMemoryUserRepository`, `FileUserRepository` | storage independence |
 | `TransactionRepository` (extends `Repository`) | `InMemoryTransactionRepository`, `FileTransactionRepository` | interface inheritance |
 | `Exportable` | `Transaction`, `Holding` | `CsvExporter` works with any of them |
+| `ExecutionModel` | `RealisticExecutionModel`, `PerfectExecutionModel` | how orders fill (spread, slippage) |
+| `TradingStrategy` | `SmaCrossoverStrategy`, `RsiStrategy`, `BuyAndHoldStrategy`, `PriceRuleStrategy` | one interface reused by backtests AND bots |
+| `HistoryProvider` | `BinanceQuoteProvider`, `YahooQuoteProvider`, `SimulatedHistoryProvider` | candles for charts/backtests. Binance and Yahoo implement **two interfaces** (`QuoteProvider` + `HistoryProvider`); Finnhub implements only one (ISP) |
+| `EquityRepository` | `InMemoryEquityRepository`, `FileEquityRepository` | equity curve storage |
 | `Refreshable` | `BasePanel` | every page can refresh itself |
 
 ## 3. SOLID principles
@@ -92,6 +99,9 @@ Every concept below points to the exact file to open during the viva.
 | Repository | `Repository<T, ID>` |
 | Template Method | `Base3DView.start3D()` + abstract `createScene()` |
 | Composition / fallback | `LivePriceFeed` HAS-A `SimulatedPriceFeed` for assets no API covers |
+| Strategy (again) | `TradingStrategy`, `ExecutionModel` |
+| Factory method | `StrategyPicker.createStrategy()` builds the chosen strategy object |
+| Parameter object | `AppContext` record carries all services to `MainFrame` |
 | Composition root / Dependency Injection | `App.start()` |
 
 ## 6. Likely viva questions
@@ -101,6 +111,12 @@ Every concept below points to the exact file to open during the viva.
 - **Why a Swing Timer for simulated prices?** It runs on the UI thread, so the UI and engine never run at the same time. No locks needed.
 - **Live prices come from the internet. Doesn't that freeze the UI?** No. `LivePriceFeed` downloads on a background thread (`ScheduledExecutorService`), then hands results to the UI thread with `SwingUtilities.invokeLater`. So listeners still run on the UI thread, like with the simulator.
 - **Which API and why?** Crypto: Binance, the exchange itself, so it's the actual traded price. Stocks/ETFs: Finnhub, an official real-time US exchange feed (free key), or Yahoo Finance when there's no key. Each website is one `QuoteProvider` class.
+- **How do you stop a backtest from cheating (look-ahead bias)?** `BacktestEngine.step()` passes `candles.subList(0, index + 1)` to the strategy, so it only ever sees the past.
+- **What's the difference between Sharpe and Sortino?** Sharpe divides the average return by the volatility of ALL returns. Sortino only counts the volatility of NEGATIVE returns, because upside moves aren't really "risk". Both use daily returns × √(days per year).
+- **What is max drawdown?** The biggest fall from a peak to a later low: `(peak − value) / peak`, the worst value seen.
+- **Profit factor?** Total money won ÷ total money lost. Above 1 means the strategy makes money overall.
+- **Why does a buy cost more than the last price?** `RealisticExecutionModel`: buyers pay the ask (half a spread above), plus random slippage and a size-based market impact. A limit order is protected by `LimitOrder.adjustFillPrice()`.
+- **Realized vs unrealized P&L?** Realized = profit locked in by a sale: `(sell price − average cost) × units − fee`, stored on the SELL transaction. Unrealized = paper profit on holdings you still own.
 - **What if the internet drops?** The last price is kept, the sidebar shows "offline", and it retries on the next refresh. With no internet at start-up, the app uses the simulator.
 - **How does 3D work in a Swing app?** `JFXPanel` is a Swing component that hosts a JavaFX scene. JavaFX 3D shapes (`Box`, `Cylinder`), `PhongMaterial`, `PointLight` and `PerspectiveCamera` draw the 3D view.
 - **How is data saved?** CSV files in `data/`. `FileUserRepository` extends the in-memory repository and writes files after each save.

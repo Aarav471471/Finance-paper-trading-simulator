@@ -17,6 +17,13 @@ rectangle "Paper Trading Simulator" {
   usecase "Place market order" as UC6a
   usecase "Place limit order" as UC6b
   usecase "Place stop-loss order" as UC6c
+  usecase "Place take-profit order" as UC6d
+  usecase "View candlestick chart\n& order book" as UC14
+  usecase "Backtest strategy\n(historical replay)" as UC15
+  usecase "View risk analytics" as UC16
+  usecase "Run trading bot" as UC17
+  usecase "View leaderboard" as UC18
+  usecase "Reset account" as UC19
   usecase "Preview fee & total" as UC7
   usecase "Cancel waiting order" as UC8
   usecase "View portfolio & P&L" as UC9
@@ -35,6 +42,14 @@ Trader --> UC6
 Trader --> UC8
 Trader --> UC9
 Trader --> UC10
+Trader --> UC14
+Trader --> UC15
+Trader --> UC16
+Trader --> UC17
+Trader --> UC18
+UC19 ..> UC18 : <<extend>>
+UC17 ..> UC6a : <<include>>
+UC6d -|> UC6
 Clock --> UC12
 
 UC6a -|> UC6

@@ -2,7 +2,9 @@
 
 A Java desktop app for practising trading **stocks, crypto and ETFs** with virtual money.
 It uses **real live market prices** (Binance for crypto, Finnhub / Yahoo Finance for stocks and ETFs),
-with Market / Limit / Stop-Loss orders, portfolio P&L, and **3D visuals**
+with Market / Limit / Stop-Loss / Take-Profit orders, realistic fills (bid/ask spread + slippage),
+candlestick charts, an order book, **backtesting with historical replay**, **risk analytics**
+(Sharpe, Sortino, max drawdown, win rate, profit factor), **auto-trading bots**, a **leaderboard**, and **3D visuals**
 (a JavaFX 3D portfolio chart you can rotate and a spinning 3D coin on the login screen).
 
 Built as an OOP / Software Engineering project: four OOP pillars, interfaces, SOLID, high cohesion
@@ -11,8 +13,28 @@ and low coupling, an SRS using **FODA**, 4 UML diagrams, and the **Spiral** SDLC
 | Login (3D coin) | Dashboard (3D portfolio) |
 |---|---|
 | ![login](docs/screenshots/01-login.png) | ![dashboard](docs/screenshots/02-dashboard.png) |
-| **Market (live prices + chart)** | **Trade (order form + preview)** |
-| ![market](docs/screenshots/03-market.png) | ![trade](docs/screenshots/04-trade.png) |
+| **Stock Details (real candlesticks + indicators)** | **Trade terminal (4 order types + order book)** |
+| ![market](docs/screenshots/07-market-candles.png) | ![trade](docs/screenshots/08-trade-orderbook.png) |
+| **Backtest (historical replay 1x/2x/5x)** | **Analytics (risk metrics + equity curve)** |
+| ![backtest](docs/screenshots/09-backtest.png) | ![analytics](docs/screenshots/11-analytics.png) |
+| **Auto-Trade (strategy bots)** | **Leaderboard** |
+| ![bots](docs/screenshots/10-autotrade.png) | ![leaderboard](docs/screenshots/12-leaderboard.png) |
+
+## Features
+
+| Area | What you get |
+|---|---|
+| Orders | Market, Limit, Stop-Loss (SL-M), Take-Profit (TP). Waiting orders execute automatically on price updates. |
+| Realistic fills | Buy at the **ask**, sell at the **bid** (spread depends on asset type), plus random **slippage** and **market impact** for big orders. Limit orders never fill worse than their limit. 0.1% brokerage fee. |
+| Portfolio | Cash, holdings value, net worth, **realized P&L** (locked in by sells) and **unrealized P&L**, average entry price per position. |
+| Market data | Real live prices (Binance, Finnhub / Yahoo Finance) with offline simulation fallback. |
+| Charts | Candlestick / line / Heikin-Ashi chart built from **real price history** (Binance, Yahoo Finance; NSE stocks via `.NS`). Ranges 1D / 1W / 1M / 3M / 1Y / 5Y / ALL use 5-minute, 1-hour, daily and weekly candles. SMA 20, EMA 50, real RSI(14), MACD and VWAP. Live prices keep the newest candle moving. |
+| Order book | Level 2 **market depth**: 5 bid and 5 ask levels built around the real bid/ask, with the spread and bid/ask ratio. |
+| Backtesting | Replay a year of **real daily candles** at **1x / 2x / 5x** or instantly. Strategies: SMA crossover, RSI, Buy & Hold, or your own price rule. Buy/sell arrows on the chart, equity curve, and comparison to buy & hold. |
+| Risk analytics | **Sharpe, Sortino, max drawdown, win rate, profit factor**, total return and an equity curve, both for your account and for every backtest. |
+| Auto-trading | Start **bots** that follow a strategy or a custom IF/THEN price rule and place real paper orders, with a live activity log. |
+| Multi-user | Register / log in, **leaderboard** ranking all traders by net worth, **reset account** to start over. |
+| 3D | Rotatable JavaFX 3D portfolio chart, spinning 3D coin on the login screen. |
 
 ## Run it
 
@@ -20,7 +42,7 @@ Requirements: **Java 17+** and **Maven** (IntelliJ IDEA / Eclipse / VS Code can 
 
 ```bash
 mvn compile exec:java          # start the app
-mvn test                       # run the 32 unit tests
+mvn test                       # run the 58 unit tests
 mvn package                    # build target/paper-trading-simulator-1.0.0.jar
 java -jar target/paper-trading-simulator-1.0.0.jar
 ```
@@ -69,21 +91,30 @@ src/main/java/com/papertrader/
 ├── App.java                 entry point + wiring (composition root)
 ├── ConsoleDemo.java         spiral loop-1 console prototype
 ├── model/                   Asset ← Stock, Crypto, ETF
-│                            Order ← MarketOrder, LimitOrder, StopLossOrder
+│                            Order ← MarketOrder, LimitOrder, StopLossOrder, TakeProfitOrder
+│                            Candle, Timeframe, TradeMarker
+├── execution/               ExecutionModel ← RealisticExecutionModel (spread + slippage), PerfectExecutionModel;
+│                            OrderBookSimulator
+├── strategy/                TradingStrategy ← SmaCrossover, Rsi, BuyAndHold, PriceRule; Indicators
+├── backtest/                BacktestEngine (step-by-step historical replay)
+├── analytics/               PerformanceAnalyzer (Sharpe, Sortino, drawdown, win rate, profit factor)
+├── bot/                     TradingBot, BotService (auto-trading)
 │                            User, Account, Portfolio, Holding, Transaction, enums
-├── interfaces/              PriceFeed, PriceListener, QuoteProvider, FeeCalculator,
+├── interfaces/              PriceFeed, PriceListener, QuoteProvider, HistoryProvider, FeeCalculator, EquityRepository,
 │                            Repository<T,ID>, TransactionRepository, Exportable
 ├── feed/                    LivePriceFeed (real prices) + Binance/Finnhub/Yahoo QuoteProviders,
 │                            SimulatedPriceFeed (offline random-walk prices)
 ├── fees/                    PercentageFeeCalculator, FlatFeeCalculator
 ├── repository/              InMemory… and File… repositories (CSV in data/)
-├── service/                 AuthService, MarketService, TradingService, PortfolioService
+├── service/                 AuthService, MarketService, TradingService, PortfolioService, ChartService,
+│                            AnalyticsService, LeaderboardService, AppContext
 ├── exception/               SimulatorException ← InsufficientFunds, InvalidOrder, Auth
 ├── util/                    Formatter, PasswordHasher, CsvExporter, AppConfig
 └── ui/                      MainFrame, LoginPanel, BasePanel ← Dashboard/Market/Trade/
-    ├── components/          Portfolio/History panels; StatCard, LineChartPanel, TickerPanel, renderers
+    ├── components/          Portfolio/History/Analytics/Backtest/AutoTrade/Leaderboard panels;
+    │                        StatCard, LineChartPanel, CandleChartPanel, OrderBookPanel, StrategyPicker, TickerPanel, renderers
     └── three/               Base3DView ← Coin3DView, Portfolio3DView (JavaFX 3D)
-src/test/java/com/papertrader/   32 JUnit tests
+src/test/java/com/papertrader/   58 JUnit tests
 docs/
 ├── SRS.md                   Software Requirements Specification (FODA)
 ├── SpiralModel.md           SDLC: 4 spiral loops

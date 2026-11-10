@@ -5,8 +5,8 @@ skinparam shadowing false
 
 package "Presentation Layer (Swing + JavaFX 3D)" {
   [MainFrame] as MF
-  [Pages: Login, Dashboard,\nMarket, Trade, Portfolio, History] as Pages
-  [UI Components:\nStatCard, LineChart, Ticker] as Comp
+  [Pages: Login, Dashboard,\nMarket, Trade, Portfolio, History,\nAnalytics, Backtest, Auto-Trade, Leaderboard] as Pages
+  [UI Components:\nStatCard, LineChart, CandleChart,\nOrderBook, Ticker] as Comp
   [3D Views (JavaFX):\nCoin3DView, Portfolio3DView] as ThreeD
 }
 
@@ -15,6 +15,15 @@ package "Service Layer" {
   [TradingService] as Trading
   [MarketService] as Market
   [PortfolioService] as PortSvc
+  [ChartService] as Charts
+  [Analytics & Leaderboard] as Analytics
+}
+
+package "Trading Intelligence" {
+  [Execution Model\n(spread + slippage)\n+ Order Book] as Exec
+  [Strategies + BacktestEngine] as Backtest
+  [PerformanceAnalyzer] as Perf
+  [BotService] as Bots
 }
 
 package "Domain Model" {
@@ -43,6 +52,17 @@ PortSvc --> Model
 Market --> Model
 
 Trading ..> Fees : <<FeeCalculator>>
+Trading ..> Exec : <<ExecutionModel>>
+Pages --> Charts
+Pages --> Analytics
+Pages --> Backtest
+Pages --> Bots
+Bots --> Trading
+Bots --> Charts
+Backtest --> Perf
+Analytics --> Perf
+Charts --> Providers : <<HistoryProvider>>
+Feed ..> Charts : <<PriceListener>>
 Trading ..> Repo : <<Repository>>
 Auth ..> Repo : <<Repository>>
 Repo --> Files : read / write CSV
