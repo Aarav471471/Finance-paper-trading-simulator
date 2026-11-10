@@ -5,7 +5,7 @@ left to right direction
 skinparam shadowing false
 actor Trader
 actor "Guest" as Guest
-actor "Market Simulator\n(timer)" as Clock
+actor "Market Data Feed\n(live APIs / simulator)" as Clock
 
 rectangle "Paper Trading Simulator" {
   usecase "Register account" as UC1

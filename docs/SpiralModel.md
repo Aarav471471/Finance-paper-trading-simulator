@@ -1,7 +1,7 @@
 # SDLC: Spiral Model
 
 We built PaperTrader 3D with the **Spiral model** (Boehm, 1988). The project went around the
-spiral four times. Each loop has the same four quadrants:
+spiral five times. Each loop has the same four quadrants:
 
 1. **Determine objectives** (planning): what this loop must deliver
 2. **Identify and resolve risks** (risk analysis): what could go wrong, and a prototype or test to reduce it
@@ -14,12 +14,13 @@ calculations) could be tried early in small prototypes before the full app was b
 ```
                      Planning  |  Risk analysis
                                |
-          Loop 4 ----------------------------------.
-          Loop 3 ---------------------------.      |
-          Loop 2 --------------------.      |      |
-          Loop 1 -------------.      |      |      |
-                              *      |      |      |
-                     ---------+------+------+------+---->  cost / time
+          Loop 5 -----------------------------------------.
+          Loop 4 ----------------------------------.      |
+          Loop 3 ---------------------------.      |      |
+          Loop 2 --------------------.      |      |      |
+          Loop 1 -------------.      |      |      |      |
+                              *      |      |      |      |
+                     ---------+------+------+------+------+-->  cost / time
                               |
                     Evaluation | Engineering
 ```
@@ -64,4 +65,14 @@ calculations) could be tried early in small prototypes before the full app was b
 | Risks | *3D not working on some laptops' graphics drivers.* *JavaFX and Swing threads mixing.* |
 | Risk resolution | `Base3DView` checks `ConditionalFeature.SCENE3D` and shows a message instead of crashing. All JavaFX work goes through `Platform.runLater`. |
 | Develop | `ui/three` package, `FileUserRepository`, `FileTransactionRepository`, 4 UML diagrams, this document. |
-| Evaluate | Final demo; screenshots in [screenshots/](screenshots/). Future loop ideas: real price API (new `PriceFeed`), database storage (new `Repository`), trailing-stop order (new `Order` subclass). None of these needs changes to existing services. |
+| Evaluate | Demo; screenshots in [screenshots/](screenshots/). Customer feedback: "use real market data". That became loop 5. |
+
+## Loop 5: Real market data
+
+| Quadrant | Work done |
+|---|---|
+| Objectives | Replace simulated prices with the most accurate free real-time sources. |
+| Risks | *Inaccurate or delayed data.* *API keys leaking into Git.* *Rate limits (HTTP 429).* *Slow or no internet freezing the UI.* *An API changing or going down.* |
+| Risk resolution | Compared sources and picked **Binance** for crypto (exchange's own prices, no key) and **Finnhub** for stocks/ETFs (official real-time US quotes, free key), with **Yahoo Finance** as a no-key option. Key read from env var or git-ignored `config.properties`. Refresh rates kept under free limits (3 s / 15 s). Downloads run on a background thread and results go back to the UI thread. If an API fails, the last price is kept; if none answer at start-up, the app uses the simulator. JSON parsing is unit-tested with sample answers and the feed is tested with a fake provider. |
+| Develop | `QuoteProvider` interface, `HttpQuoteProvider` + 3 providers, `LivePriceFeed`, `AppConfig`, sidebar data-status label. **No changes were needed in `MarketService`, `TradingService` or the pages**, because they only depend on the `PriceFeed` interface (Open/Closed principle proven in practice). |
+| Evaluate | 32 tests green. Future loop ideas: database storage (new `Repository`), trailing-stop order (new `Order` subclass), Indian NSE stocks (new `QuoteProvider`). |
