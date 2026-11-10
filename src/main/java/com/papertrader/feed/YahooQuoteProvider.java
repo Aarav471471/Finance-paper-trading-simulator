@@ -1,6 +1,8 @@
 package com.papertrader.feed;
 
 import com.papertrader.interfaces.HistoryProvider;
+import com.papertrader.interfaces.SnapshotProvider;
+import com.papertrader.model.MarketSnapshot;
 import com.papertrader.model.Asset;
 import com.papertrader.model.Candle;
 import com.papertrader.model.ETF;
@@ -22,7 +24,7 @@ import java.util.Map;
  *
  * Answer looks like: {"chart":{"result":[{"meta":{"regularMarketPrice":271.4,"chartPreviousClose":270.2,...}}]}}
  */
-public class YahooQuoteProvider extends HttpQuoteProvider implements HistoryProvider {
+public class YahooQuoteProvider extends HttpQuoteProvider implements HistoryProvider, SnapshotProvider {
 
     @Override
     public String getName() {
@@ -39,7 +41,7 @@ public class YahooQuoteProvider extends HttpQuoteProvider implements HistoryProv
         Map<String, Quote> quotes = new HashMap<>();
         for (Asset asset : assets) {
             String sym = asset.getSymbol();
-            String querySym = yahooSymbol(sym);
+            String querySym = YahooSymbols.of(sym);
             try {
                 String json = get("https://query1.finance.yahoo.com/v8/finance/chart/" + querySym
                         + "?interval=1d&range=1d");
@@ -56,17 +58,6 @@ public class YahooQuoteProvider extends HttpQuoteProvider implements HistoryProv
             throw new IOException("Yahoo Finance did not answer");
         }
         return quotes;
-    }
-
-    private boolean isIndianSymbol(String s) {
-        return s.equals("RELIANCE") || s.equals("TCS") || s.equals("HDFCBANK") || s.equals("INFY")
-                || s.equals("ICICIBANK") || s.equals("BHARTIARTL") || s.equals("SBIN") || s.equals("ITC")
-                || s.equals("LT") || s.equals("TATAMOTORS") || s.equals("TRENT");
-    }
-
-    /** Indian NSE stocks are listed on Yahoo with a ".NS" ending, e.g. RELIANCE.NS. */
-    private String yahooSymbol(String symbol) {
-        return isIndianSymbol(symbol) || symbol.equals("ETERNAL") ? symbol + ".NS" : symbol;
     }
 
     @Override
@@ -88,7 +79,7 @@ public class YahooQuoteProvider extends HttpQuoteProvider implements HistoryProv
             case ONE_WEEK -> "interval=1wk&range=5y";
         };
         List<Candle> all = parseCandles(get("https://query1.finance.yahoo.com/v8/finance/chart/"
-                + yahooSymbol(asset.getSymbol()) + "?" + query));
+                + YahooSymbols.of(asset.getSymbol()) + "?" + query));
         return all.subList(Math.max(0, all.size() - count), all.size());
     }
 
@@ -113,6 +104,47 @@ public class YahooQuoteProvider extends HttpQuoteProvider implements HistoryProv
                     low.getDouble(i), close.getDouble(i), volume.isNull(i) ? 0 : volume.getDouble(i)));
         }
         return candles;
+    }
+
+    /** Today's open / high / low / volume and the 52-week range (same chart endpoint, no key). */
+    @Override
+    public MarketSnapshot fetchSnapshot(Asset asset) throws IOException {
+        return fetchSnapshot(YahooSymbols.of(asset.getSymbol()));
+    }
+
+    /** Works for any Yahoo symbol, including indices such as ^NSEI (NIFTY 50) or ^GSPC (S&P 500). */
+    public MarketSnapshot fetchSnapshot(String yahooSymbol) throws IOException {
+        String json = get("https://query1.finance.yahoo.com/v8/finance/chart/"
+                + java.net.URLEncoder.encode(yahooSymbol, java.nio.charset.StandardCharsets.UTF_8)
+                + "?interval=1d&range=1d");
+        return parseSnapshot(json);
+    }
+
+    static MarketSnapshot parseSnapshot(String json) throws IOException {
+        try {
+            JSONObject result = new JSONObject(json).getJSONObject("chart").getJSONArray("result").getJSONObject(0);
+            JSONObject meta = result.getJSONObject("meta");
+            double open = Double.NaN;
+            JSONObject indicators = result.optJSONObject("indicators");
+            if (indicators != null && indicators.has("quote")) {
+                JSONArray opens = indicators.getJSONArray("quote").getJSONObject(0).optJSONArray("open");
+                if (opens != null && opens.length() > 0 && !opens.isNull(0)) {
+                    open = opens.getDouble(0);
+                }
+            }
+            return new MarketSnapshot(
+                    meta.getDouble("regularMarketPrice"),
+                    meta.optDouble("chartPreviousClose", meta.optDouble("previousClose", Double.NaN)),
+                    open,
+                    meta.optDouble("regularMarketDayHigh", Double.NaN),
+                    meta.optDouble("regularMarketDayLow", Double.NaN),
+                    meta.optDouble("regularMarketVolume", Double.NaN),
+                    meta.optDouble("fiftyTwoWeekHigh", Double.NaN),
+                    meta.optDouble("fiftyTwoWeekLow", Double.NaN),
+                    "Yahoo Finance");
+        } catch (Exception e) {
+            throw new IOException("Unexpected Yahoo answer", e);
+        }
     }
 
     static Quote parse(String json) {
