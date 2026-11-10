@@ -1,0 +1,47 @@
+@startuml use-case-diagram
+!pragma layout smetana
+title Paper Trading Simulator - Use Case Diagram
+left to right direction
+skinparam shadowing false
+actor Trader
+actor "Guest" as Guest
+actor "Market Simulator\n(timer)" as Clock
+
+rectangle "Paper Trading Simulator" {
+  usecase "Register account" as UC1
+  usecase "Log in" as UC2
+  usecase "Log out" as UC3
+  usecase "View dashboard\n(3D portfolio)" as UC4
+  usecase "View live market\n& price chart" as UC5
+  usecase "Place order" as UC6
+  usecase "Place market order" as UC6a
+  usecase "Place limit order" as UC6b
+  usecase "Place stop-loss order" as UC6c
+  usecase "Preview fee & total" as UC7
+  usecase "Cancel waiting order" as UC8
+  usecase "View portfolio & P&L" as UC9
+  usecase "View trade history" as UC10
+  usecase "Export history to CSV" as UC11
+  usecase "Update prices" as UC12
+  usecase "Execute pending orders" as UC13
+}
+
+Guest --> UC1
+Guest --> UC2
+Trader --> UC3
+Trader --> UC4
+Trader --> UC5
+Trader --> UC6
+Trader --> UC8
+Trader --> UC9
+Trader --> UC10
+Clock --> UC12
+
+UC6a -|> UC6
+UC6b -|> UC6
+UC6c -|> UC6
+UC6 ..> UC7 : <<include>>
+UC11 ..> UC10 : <<extend>>
+UC12 ..> UC13 : <<include>>
+Trader -|> Guest
+@enduml
