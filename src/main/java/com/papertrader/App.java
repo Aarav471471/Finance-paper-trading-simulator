@@ -1,6 +1,16 @@
 package com.papertrader;
 
 import com.formdev.flatlaf.FlatDarkLaf;
+import com.papertrader.bot.BotService;
+import com.papertrader.execution.ExecutionModel;
+import com.papertrader.execution.RealisticExecutionModel;
+import com.papertrader.feed.SimulatedHistoryProvider;
+import com.papertrader.interfaces.HistoryProvider;
+import com.papertrader.repository.FileEquityRepository;
+import com.papertrader.service.AnalyticsService;
+import com.papertrader.service.AppContext;
+import com.papertrader.service.ChartService;
+import com.papertrader.service.LeaderboardService;
 import com.papertrader.exception.SimulatorException;
 import com.papertrader.feed.BinanceQuoteProvider;
 import com.papertrader.feed.FinnhubQuoteProvider;
@@ -86,23 +96,39 @@ public class App {
 
         // 2. Strategy objects (the price feed was chosen in createPriceFeed)
         FeeCalculator fees = new PercentageFeeCalculator(0.1);
+        ExecutionModel execution = new RealisticExecutionModel();   // bid/ask spread + slippage
+        List<HistoryProvider> historyProviders = new ArrayList<>();
+        if (priceFeed instanceof LivePriceFeed) {
+            historyProviders.add(new BinanceQuoteProvider());   // crypto candles
+            historyProviders.add(new YahooQuoteProvider());     // stock / ETF candles
+        }
+        historyProviders.add(new SimulatedHistoryProvider());  // always works (offline fallback)
 
         // 3. Services (dependencies are passed in through constructors)
         MarketService marketService = new MarketService(assets);
         AuthService authService = new AuthService(userRepository, STARTING_CASH);
-        TradingService tradingService = new TradingService(fees, userRepository, transactionRepository);
+        TradingService tradingService = new TradingService(fees, execution, userRepository, transactionRepository);
         PortfolioService portfolioService = new PortfolioService(marketService);
+        ChartService chartService = new ChartService(historyProviders);
+        AnalyticsService analyticsService = new AnalyticsService(portfolioService, tradingService,
+                new FileEquityRepository(dataDir), STARTING_CASH);
+        LeaderboardService leaderboardService = new LeaderboardService(userRepository, portfolioService,
+                tradingService, STARTING_CASH);
+        BotService botService = new BotService(tradingService, chartService, 5000);
 
         // 4. Observer wiring: these services hear about every price change
         priceFeed.addListener(marketService);
         priceFeed.addListener(tradingService);
+        priceFeed.addListener(chartService);
 
         createDemoAccount(authService, tradingService, marketService);
 
         // 5. Show the window and start the market
-        MainFrame frame = new MainFrame(authService, marketService, tradingService, portfolioService,
-                priceFeed, STARTING_CASH);
+        AppContext context = new AppContext(authService, marketService, tradingService, portfolioService,
+                chartService, analyticsService, leaderboardService, botService, fees, priceFeed, STARTING_CASH);
+        MainFrame frame = new MainFrame(context);
         frame.setVisible(true);
+        botService.start();
         priceFeed.start();
     }
 
