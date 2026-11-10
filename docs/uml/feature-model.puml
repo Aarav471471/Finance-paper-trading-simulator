@@ -1,0 +1,36 @@
+@startwbs feature-model
+title FODA Feature Model - Paper Trading Simulator
+* Paper Trading Simulator
+** User Management (mandatory)
+*** Register (mandatory)
+*** Login / Logout (mandatory)
+*** Password hashing (mandatory)
+** Market Data (mandatory)
+*** Asset Catalog (mandatory)
+**** Stock | Crypto | ETF (or-group)
+*** Price Source (mandatory, alternative)
+**** Simulated feed (selected)
+**** Live API feed (future)
+*** Price history chart (optional)
+** Trading (mandatory)
+*** Order Type (mandatory, or-group)
+**** Market
+**** Limit
+**** Stop-Loss
+*** Fee Strategy (mandatory, alternative)
+**** Percentage (selected)
+**** Flat
+*** Cancel pending order (optional)
+** Portfolio (mandatory)
+*** Holdings & avg. cost (mandatory)
+*** Profit / Loss (mandatory)
+*** Transaction history (mandatory)
+*** CSV export (optional)
+** Persistence (mandatory, alternative)
+*** CSV files (selected)
+*** In-memory (tests)
+** Visualisation (optional)
+*** 3D portfolio bars (optional)
+*** 3D login coin (optional)
+*** Live ticker (optional)
+@endwbs
