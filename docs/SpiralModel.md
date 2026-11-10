@@ -1,7 +1,7 @@
 # SDLC: Spiral Model
 
 We built PaperTrader 3D with the **Spiral model** (Boehm, 1988). The project went around the
-spiral six times. Each loop has the same four quadrants:
+spiral seven times. Each loop has the same four quadrants:
 
 1. **Determine objectives** (planning): what this loop must deliver
 2. **Identify and resolve risks** (risk analysis): what could go wrong, and a prototype or test to reduce it
@@ -87,3 +87,13 @@ calculations) could be tried early in small prototypes before the full app was b
 | Risk resolution | Every formula is unit-tested against hand-calculated values. `BacktestEngine` only gives the strategy `candles.subList(0, i + 1)`, so it can never see the future. Each bot tracks its own position and only sells what it bought. Sharpe/Sortino use **daily** returns and show "n/a" until there are 3 days of data. History loads on a background thread. The same `TradingStrategy` interface is reused by backtests and bots. |
 | Develop | Packages `execution`, `strategy`, `backtest`, `analytics`, `bot`; `ChartService`, `AnalyticsService`, `LeaderboardService`; 4 new pages (Analytics, Backtest, Auto-Trade, Leaderboard); candlestick chart and order book components. Existing classes changed only where needed (`TradingService` gets an `ExecutionModel` through its constructor, `Transaction` gained realized P&L). |
 | Evaluate | 58 tests green. The UI was then redesigned as a trading terminal (sidebar with 10 pages); the new features were fitted into it: the terminal's candlestick chart now reads real history from `ChartService`, its depth panel uses `OrderBookSimulator`, the order ticket gained Take-Profit, and Portfolio/History show the real realized P&L. Margin/leverage was considered and left out to keep the project explainable. Future ideas: margin accounts, short selling, OCO/bracket orders, Indian NSE data. |
+
+## Loop 7: Real data everywhere
+
+| Quadrant | Work done |
+|---|---|
+| Objectives | Replace every sample number in the redesigned terminal UI with real data: index levels, VIX, day and 52-week ranges, volume, fundamentals, news, technical rating, sector heatmap, period P&L, trade statistics, calendar and tax report. The look of the UI must not change. |
+| Risks | *Unofficial APIs* (Yahoo quoteSummary needs a cookie + crumb and can change). *Too many requests* (pages refresh every second). *Showing invented numbers when data is missing.* *UI freezing on slow downloads.* *Mixing INR and USD values.* |
+| Risk resolution | `MarketDataService` caches every value with a maximum age and downloads on a background thread; pages only read the cache. Unknown values are `NaN` and shown as **N/A**. When offline, day/52-week stats and volume are computed from `ChartService` candles. JSON parsers are static methods tested with saved responses (`MarketDataParsingTest`). Trade statistics live in a separate, tested `TradeStats` class instead of inside the UI. USD/INR uses the live `INR=X` quote. |
+| Develop | `SnapshotProvider` and `FundamentalsProvider` interfaces; `YahooFundamentalsProvider`, `CoinGeckoGlobalProvider`, `Http`, `YahooSymbols`; `MarketDataService`; `TechnicalAnalysis`; `TradeStats`; `MarketHours`, `MarketFormat`. Markets, Stock Details, Trade, Dashboard, Portfolio and History pages now read these; sample rows and hardcoded values were removed. |
+| Evaluate | 68 tests green. Each page was compared with screenshots before and after to keep the same layout. Known limits: fundamentals depend on Yahoo's unofficial endpoint; Indian stock prices are in INR while the account cash is in USD (a currency-conversion step is a future improvement). |

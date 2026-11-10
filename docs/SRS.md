@@ -70,6 +70,8 @@ internet; without internet it switches to simulated prices. Data is stored in CS
 11. Backtest strategies with historical replay (1x/2x/5x)
 12. Risk analytics: Sharpe, Sortino, max drawdown, win rate, profit factor
 13. Auto-trading bots driven by strategies or custom price rules
+14. Real market overview (indices, VIX, breadth, sectors), stock fundamentals, news and technical rating
+15. Trade statistics, P&L calendar and capital-gains tax estimate from the user's own trades
 
 ### 2.3 User classes
 | User | Description |
@@ -235,6 +237,13 @@ See [uml/component-diagram.png](uml/component-diagram.png).
 | FR-35 | The system shall let the user start **trading bots** that apply a strategy to live 1-minute candles every 5 seconds and place paper orders; a bot only sells units it bought itself. | High |
 | FR-36 | The system shall show a **leaderboard** of all users ranked by net worth with return %, realized P&L and number of trades. | Medium |
 | FR-37 | The system shall let a user **reset** their account (cash back to the start, holdings, history, pending orders and bots cleared) after confirmation. | Medium |
+| FR-38 | The system shall show real day high/low, open, previous close, volume, VWAP and 52-week range for each asset (Yahoo / Binance), computed from candles when offline. | High |
+| FR-39 | The system shall show real index levels for India (NIFTY 50, SENSEX, BANK NIFTY, NIFTY IT), the USA (S&P 500, NASDAQ 100, DOW, RUSSELL 2000) and crypto (BTC, ETH, SOL, total market cap from CoinGecko), plus India VIX / VIX. | Medium |
+| FR-40 | The system shall show fundamentals (market cap, P/E, EPS, dividend yield, beta, margins, debt/equity, yearly financials, major holders, analyst target) and the latest news for a stock. | Medium |
+| FR-41 | The system shall compute a technical rating (buy / neutral / sell votes) from moving averages, RSI, MACD, Bollinger bands and momentum on real candles. | Medium |
+| FR-42 | The system shall show **N/A** for any value it cannot obtain, and never display invented numbers. | High |
+| FR-43 | The system shall compute trade statistics from the user's transactions: win rate, profit factor, win/loss streaks, average holding time (FIFO), best/worst asset, daily P&L, a monthly P&L calendar and short/long-term capital gains with a tax estimate. | Medium |
+| FR-44 | The system shall show the market status (open/closed) using real NSE (09:15–15:30 IST) and US (09:30–16:00 ET) trading hours. | Low |
 
 ### 4.2 Non-functional requirements
 
@@ -258,7 +267,9 @@ See [uml/component-diagram.png](uml/component-diagram.png).
 - **Communication interfaces (HTTPS, JSON):**
   - Binance `GET /api/v3/ticker/24hr?symbols=[...]` → `lastPrice`, `openPrice`
   - Finnhub `GET /api/v1/quote?symbol=..&token=..` → `c` (current), `pc` (previous close)
-  - Yahoo Finance `GET /v8/finance/chart/{symbol}` → `meta.regularMarketPrice`, `meta.chartPreviousClose`
+  - Yahoo Finance `GET /v8/finance/chart/{symbol}` → `meta.regularMarketPrice`, `meta.chartPreviousClose`, day high/low, volume, 52-week range
+  - Yahoo Finance `GET /v10/finance/quoteSummary/{symbol}` (cookie + crumb) → fundamentals, holders, analyst target; `GET /v1/finance/search` → news
+  - CoinGecko `GET /api/v3/global` → total crypto market cap and 24 h change
 - **Files:** `data/users.csv`, `data/holdings.csv`, `data/transactions.csv`.
 
 ---
@@ -297,3 +308,7 @@ Diagram: [uml/use-case-diagram.png](uml/use-case-diagram.png)
 | FR-35 | `TradingBot`, `BotService` | manual (screenshot) |
 | FR-36..37 | `LeaderboardService`, `TradingService.resetAccount` | `LeaderboardAndResetTest` |
 | FR-20 | `Portfolio3DView` | manual (screenshot) |
+| FR-38..40, FR-42 | `MarketDataService`, `YahooQuoteProvider`, `BinanceQuoteProvider`, `YahooFundamentalsProvider`, `CoinGeckoGlobalProvider` | `MarketDataParsingTest` |
+| FR-41 | `TechnicalAnalysis` | `TechnicalAnalysisTest` |
+| FR-43 | `TradeStats` | `TradeStatsTest` |
+| FR-44 | `MarketHours` | manual |
