@@ -1,5 +1,9 @@
 package com.papertrader.ui;
 
+import com.papertrader.model.MarketSnapshot;
+import com.papertrader.model.NewsItem;
+import com.papertrader.service.MarketDataService;
+import com.papertrader.util.MarketFormat;
 import com.papertrader.model.Asset;
 import com.papertrader.model.Crypto;
 import com.papertrader.model.ETF;
@@ -48,7 +52,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 
@@ -94,6 +101,27 @@ public class MarketPanel extends BasePanel {
     private Region currentRegion = Region.INDIA;
     private String activeSubExch = "NSE";
     private String activeSector = "ALL";
+
+    // real numbers (set from MainFrame); null = only the app's own prices are used
+    private MarketDataService marketData;
+    private final JLabel breadthLbl = new JLabel("Breadth: -");
+    private final JLabel vixLbl = new JLabel("VIX: N/A");
+    private final JLabel dayVolLbl = new JLabel("Day Turnover: N/A");
+    private final JPanel activityStrip = new JPanel(new GridLayout(1, 4, 8, 0));
+    private String shownIndexKey = "";
+    private int refreshTick = 0;
+
+    /** The real indices shown per region: {Yahoo symbol, title, tag, description}. */
+    private static final String[][] INDIA_INDICES = {
+            {"^NSEI", "NIFTY 50", "NSE", "National Stock Exchange Benchmark"},
+            {"^BSESN", "SENSEX", "BSE", "Bombay Stock Exchange 30"},
+            {"^NSEBANK", "BANK NIFTY", "NSE", "Banking Index Sectoral"},
+            {"^CNXIT", "NIFTY IT", "NSE", "Information Technology Index"}};
+    private static final String[][] USA_INDICES = {
+            {"^GSPC", "S&P 500", "NYSE", "Standard & Poor's 500 Index"},
+            {"^NDX", "NASDAQ 100", "NASDAQ", "Largest 100 Nasdaq Companies"},
+            {"^DJI", "DOW JONES", "NYSE", "Dow Jones Industrial Average"},
+            {"^RUT", "RUSSELL 2000", "NYSE", "US Small Cap Index"}};
     private String activeCap = "ALL";
     private String activeSort = "MCAP_DESC";
     private String searchQuery = "";
@@ -371,15 +399,15 @@ public class MarketPanel extends BasePanel {
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         right.setOpaque(false);
 
-        JLabel breadth = new JLabel("Breadth: 1,428 ▲ / 742 ▼ / 88 •");
+        JLabel breadth = breadthLbl;
         breadth.setFont(Theme.MONO_TINY);
         breadth.setForeground(Theme.TXT_SECONDARY);
 
-        JLabel vix = new JLabel("India VIX: 13.42 -1.15%");
+        JLabel vix = vixLbl;
         vix.setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 9f));
         vix.setForeground(Theme.GAIN);
 
-        JLabel vol = new JLabel("Day Volume: ₹1,48,920 Cr");
+        JLabel vol = dayVolLbl;
         vol.setFont(Theme.MONO_TINY);
         vol.setForeground(Theme.ACCENT);
 
@@ -469,34 +497,52 @@ public class MarketPanel extends BasePanel {
     private void rebuildIndexCards() {
         indexCardsGrid.removeAll();
 
-        // 4 Index cards depending on region
-        String[][] cardsData = switch (currentRegion) {
-            case INDIA -> new String[][]{
-                    {"NIFTY 50", "NSE", "National Stock Exchange Benchmark", "₹24,852.15", "+142.30", "+0.58%", "₹24,780.20", "₹24,910.40"},
-                    {"SENSEX", "BSE", "Bombay Stock Exchange 30", "₹81,385.40", "+428.65", "+0.53%", "₹81,110.00", "₹81,520.10"},
-                    {"BANK NIFTY", "NSE", "Banking Index Sectoral", "₹51,240.80", "-85.20", "-0.17%", "₹51,180.50", "₹51,490.00"},
-                    {"NIFTY IT", "NSE", "Information Tech Outperformer", "₹41,890.25", "+620.40", "+1.50%", "₹41,520.00", "₹42,010.00"}
-            };
-            case USA -> new String[][]{
-                    {"S&P 500 (SPY)", "NYSE", "Standard & Poor's 500 ETF", "$584.20", "+2.60", "+0.45%", "$581.50", "$585.80"},
-                    {"NASDAQ 100", "NASDAQ", "Invesco Tech QQQ Benchmark", "$492.10", "+4.00", "+0.82%", "$488.20", "$493.50"},
-                    {"DOW JONES", "NYSE", "Dow Jones Industrial Average", "$432.50", "+0.95", "+0.22%", "$430.80", "$433.90"},
-                    {"RUSSELL 2000", "NYSE", "US Small Cap Growth ETF", "$224.80", "-0.34", "-0.15%", "$223.10", "$225.40"}
-            };
-            case CRYPTO -> new String[][]{
-                    {"BITCOIN", "BTC", "Dominant Digital Asset", "$74,632.05", "-120.00", "-0.16%", "$73,800.00", "$75,100.00"},
-                    {"ETHEREUM", "ETH", "Smart Contract Layer 1", "$2,080.49", "-35.00", "-1.65%", "$2,040.00", "$2,115.00"},
-                    {"SOLANA", "SOL", "High Throughput Execution", "$84.88", "-2.20", "-2.55%", "$83.20", "$87.50"},
-                    {"TOTAL CRYPTO", "MCAP", "Overall Cryptocurrency Market", "$2.48T", "-21.0B", "-0.85%", "$2.44T", "$2.51T"}
-            };
-        };
-
+        // 4 real index cards for the region (Yahoo Finance / Binance / CoinGecko); N/A while loading or offline
+        String[][] cardsData = indexCardsData();
         for (String[] d : cardsData) {
             indexCardsGrid.add(createIndexCard(d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7]));
         }
 
         indexCardsGrid.revalidate();
         indexCardsGrid.repaint();
+    }
+
+    /** Builds the 4 index cards of the current region from real data: {title, tag, sub, value, points, pct, low, high}. */
+    private String[][] indexCardsData() {
+        List<String[]> rows = new ArrayList<>();
+        if (currentRegion == Region.CRYPTO) {
+            for (String sym : new String[]{"BTC", "ETH", "SOL"}) {
+                Asset a = marketService.findBySymbol(sym).orElse(null);
+                if (a == null) {
+                    continue;
+                }
+                MarketSnapshot snap = marketData != null ? marketData.snapshot(a) : null;
+                rows.add(new String[]{a.getName().toUpperCase(), sym, a.getType() + " • 24h", MarketFormat.price("$", a.getPrice()),
+                        String.format(Locale.US, "%+,.2f", a.getPrice() - a.getPreviousClose()),
+                        MarketFormat.signedPct(a.getChangePercent()),
+                        snap == null ? MarketFormat.NA : MarketFormat.price("$", snap.dayLow()),
+                        snap == null ? MarketFormat.NA : MarketFormat.price("$", snap.dayHigh())});
+            }
+            double[] cap = marketData == null ? null : marketData.cryptoMarketCap().orElse(null);
+            rows.add(cap == null
+                    ? new String[]{"TOTAL CRYPTO", "MCAP", "Overall Cryptocurrency Market", MarketFormat.NA, "", "+0.00%", "", ""}
+                    : new String[]{"TOTAL CRYPTO", "MCAP", "CoinGecko • whole market", MarketFormat.big("$", cap[0]),
+                    MarketFormat.big("$", cap[0] - cap[0] / (1 + cap[1] / 100)), MarketFormat.signedPct(cap[1]), "", ""});
+            return rows.toArray(new String[0][]);
+        }
+        String cur = currentRegion == Region.INDIA ? "₹" : "$";
+        for (String[] idx : currentRegion == Region.INDIA ? INDIA_INDICES : USA_INDICES) {
+            MarketSnapshot snap = marketData == null ? null : marketData.index(idx[0]).orElse(null);
+            if (snap == null) {
+                rows.add(new String[]{idx[1], idx[2], idx[3], MarketFormat.NA,
+                        marketData != null && marketData.isOnline() ? "loading" : "offline", "+0.00%", MarketFormat.NA, MarketFormat.NA});
+            } else {
+                rows.add(new String[]{idx[1], idx[2], idx[3], MarketFormat.price(cur, snap.price()),
+                        String.format(Locale.US, "%+,.2f", snap.change()), MarketFormat.signedPct(snap.changePercent()),
+                        MarketFormat.price(cur, snap.dayLow()), MarketFormat.price(cur, snap.dayHigh())});
+            }
+        }
+        return rows.toArray(new String[0][]);
     }
 
     private JPanel createIndexCard(String title, String tag, String sub, String val, String deltaPts, String deltaPct, String low, String high) {
@@ -566,10 +612,15 @@ public class MarketPanel extends BasePanel {
                 super.paintComponent(g);
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                if (MarketFormat.NA.equals(val)) {
+                    g2.dispose();
+                    return;   // no data yet: draw nothing rather than a made-up line
+                }
                 int w = getWidth();
                 int h = getHeight();
-                int[] ys = isUp ? new int[]{h - 4, h - 8, h - 6, h - 14, h - 12, h - 22, 4}
-                                : new int[]{4, 8, 6, 14, 12, h - 8, h - 4};
+                // real shape: previous close -> today's low/high -> now (no invented wiggles)
+                int[] ys = isUp ? new int[]{h - 6, h - 4, 6}
+                                : new int[]{6, 4, h - 6};
                 int n = ys.length;
                 int[] xs = new int[n];
                 for (int i = 0; i < n; i++) xs[i] = (int) ((double) i / (n - 1) * w);
@@ -640,68 +691,90 @@ public class MarketPanel extends BasePanel {
 
         // Sectors grid
         sectorStrip.setOpaque(false);
-        String[][] sectors = {
-                {"Info Tech", "+1.85%", "85"},
-                {"Automobile", "+1.20%", "60"},
-                {"Energy", "+0.95%", "48"},
-                {"Infrastructure", "+0.80%", "40"},
-                {"Banking", "+0.42%", "25"},
-                {"FMCG", "+0.15%", "10"},
-                {"Pharma", "-0.35%", "22"},
-                {"Metals & Min", "-1.10%", "55"}
-        };
-
-        for (String[] s : sectors) {
-            String name = s[0];
-            String pct = s[1];
-            int barPct = Integer.parseInt(s[2]);
-            boolean isUp = !pct.startsWith("-");
-
-            JButton chip = new JButton() {
-                @Override
-                protected void paintComponent(Graphics g) {
-                    Graphics2D g2 = (Graphics2D) g.create();
-                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                    g2.setColor(Theme.SURFACE_SUB);
-                    g2.fillRoundRect(0, 0, getWidth(), getHeight(), 4, 4);
-                    g2.setColor(Theme.BORDER_CUSTOM);
-                    g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 4, 4);
-
-                    g2.setFont(Theme.MICRO.deriveFont(Font.BOLD, 8.5f));
-                    g2.setColor(Color.WHITE);
-                    g2.drawString(name, 6, 12);
-
-                    g2.setColor(isUp ? Theme.GAIN : Theme.LOSS);
-                    g2.drawString(pct, 6, 24);
-
-                    // Mini progress bar
-                    int pX = getWidth() - 32;
-                    int pY = 16;
-                    int pW = 26;
-                    int pH = 4;
-                    g2.setColor(Theme.APP_BG);
-                    g2.fillRoundRect(pX, pY, pW, pH, 2, 2);
-                    g2.setColor(isUp ? Theme.GAIN : Theme.LOSS);
-                    g2.fillRoundRect(pX, pY, (int) (pW * (barPct / 100.0)), pH, 2, 2);
-
-                    g2.dispose();
-                }
-            };
-            chip.setPreferredSize(new Dimension(85, 30));
-            chip.setBorder(BorderFactory.createEmptyBorder());
-            chip.setFocusPainted(false);
-            chip.setCursor(new Cursor(Cursor.HAND_CURSOR));
-            chip.addActionListener(e -> {
-                activeSector = name;
-                sectorCombo.setSelectedItem(name);
-                showToast("Filtered by " + name + " sector");
-                filterTable();
-            });
-            sectorStrip.add(chip);
+        String[][] sectors = sectorHeat();
+        for (String[] sec : sectors) {
+            sectorStrip.add(sectorChip(sec[0], sec[1], Integer.parseInt(sec[2])));
         }
 
         card.add(sectorStrip, BorderLayout.CENTER);
         return card;
+    }
+
+    /** Average change % of each sector, from the live prices of the app's assets (max 8 sectors). */
+    private String[][] sectorHeat() {
+        Map<String, double[]> sums = new LinkedHashMap<>();   // sector -> {total %, count}
+        for (Asset a : marketService.getAllAssets()) {
+            double[] v = sums.computeIfAbsent(getAssetSector(a), k -> new double[2]);
+            v[0] += a.getChangePercent();
+            v[1]++;
+        }
+        List<Map.Entry<String, double[]>> list = new ArrayList<>(sums.entrySet());
+        list.sort((x, y) -> Double.compare(y.getValue()[0] / y.getValue()[1], x.getValue()[0] / x.getValue()[1]));
+        double maxAbs = 0.01;
+        for (Map.Entry<String, double[]> e : list) {
+            maxAbs = Math.max(maxAbs, Math.abs(e.getValue()[0] / e.getValue()[1]));
+        }
+        String[][] out = new String[Math.min(8, list.size())][];
+        for (int i = 0; i < out.length; i++) {
+            double avg = list.get(i).getValue()[0] / list.get(i).getValue()[1];
+            out[i] = new String[]{list.get(i).getKey(), String.format(Locale.US, "%+.2f%%", avg),
+                    String.valueOf((int) Math.round(Math.abs(avg) / maxAbs * 100))};
+        }
+        return out;
+    }
+
+    private JButton sectorChip(String name, String pct, int barPct) {
+        boolean isUp = !pct.startsWith("-");
+        JButton chip = new JButton() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(Theme.SURFACE_SUB);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 4, 4);
+                g2.setColor(Theme.BORDER_CUSTOM);
+                g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 4, 4);
+
+                g2.setFont(Theme.MICRO.deriveFont(Font.BOLD, 8.5f));
+                g2.setColor(Color.WHITE);
+                g2.drawString(name, 6, 12);
+
+                g2.setColor(isUp ? Theme.GAIN : Theme.LOSS);
+                g2.drawString(pct, 6, 24);
+
+                // Mini progress bar
+                int pX = getWidth() - 32;
+                int pY = 16;
+                int pW = 26;
+                int pH = 4;
+                g2.setColor(Theme.APP_BG);
+                g2.fillRoundRect(pX, pY, pW, pH, 2, 2);
+                g2.setColor(isUp ? Theme.GAIN : Theme.LOSS);
+                g2.fillRoundRect(pX, pY, (int) (pW * (barPct / 100.0)), pH, 2, 2);
+
+                g2.dispose();
+            }
+        };
+        chip.setPreferredSize(new Dimension(85, 30));
+        chip.setBorder(BorderFactory.createEmptyBorder());
+        chip.setFocusPainted(false);
+        chip.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        chip.addActionListener(e -> {
+            activeSector = name;
+            sectorCombo.setSelectedItem(name);
+            showToast("Filtered by " + name + " sector");
+            filterTable();
+        });
+        return chip;
+    }
+
+    private void rebuildSectorStrip() {
+        sectorStrip.removeAll();
+        for (String[] sec : sectorHeat()) {
+            sectorStrip.add(sectorChip(sec[0], sec[1], Integer.parseInt(sec[2])));
+        }
+        sectorStrip.revalidate();
+        sectorStrip.repaint();
     }
 
     private JPanel buildMoversDock() {
@@ -1060,15 +1133,76 @@ public class MarketPanel extends BasePanel {
     }
 
     private JPanel buildHighVelocityStrip() {
-        JPanel strip = new JPanel(new GridLayout(1, 4, 8, 0));
-        strip.setOpaque(false);
+        activityStrip.setOpaque(false);
+        rebuildActivityStrip();
+        return activityStrip;
+    }
 
-        strip.add(createActivityCard("MOST ACTIVELY TRADED", "HDFCBANK", "12.14M shares", "₹1,993.4 Cr turnover today", Theme.ACCENT));
-        strip.add(createActivityCard("VOLUME SURGE (3.4X)", "ETERNAL", "+3.83%", "24.6M vol vs 7.2M 10-day avg", Theme.GAIN));
-        strip.add(createActivityCard("NEW 52-WEEK HIGH", "TRENT", "₹7,210.00", "ATH break +4.85% today", Theme.WARNING));
-        strip.add(createActivityCard("TOP PAPER ADDITION", "INFY", "+1,420 adds", "78% buy sentiment in simulation", Theme.ACCENT));
-
-        return strip;
+    /** Four "what is happening" cards, all calculated from real prices, volumes and 52-week ranges. */
+    private void rebuildActivityStrip() {
+        activityStrip.removeAll();
+        Asset mostActive = null;
+        double bestTurnover = -1;
+        Asset surge = null;
+        double bestSurge = -1;
+        Asset nearHigh = null;
+        double bestHigh = -1;
+        Asset widest = null;
+        double bestRange = -1;
+        for (Asset a : marketService.getAllAssets()) {
+            if (marketData == null) {
+                break;
+            }
+            MarketSnapshot snap = marketData.snapshot(a);
+            double turnover = snap.volume() * a.getPrice();
+            if (MarketFormat.known(turnover) && turnover > bestTurnover) {
+                bestTurnover = turnover;
+                mostActive = a;
+            }
+            double avg = marketData.averageVolume(a, 10);
+            if (MarketFormat.known(snap.volume()) && MarketFormat.known(avg) && avg > 0 && snap.volume() / avg > bestSurge) {
+                bestSurge = snap.volume() / avg;
+                surge = a;
+            }
+            if (MarketFormat.known(snap.week52High()) && snap.week52High() > 0 && a.getPrice() / snap.week52High() > bestHigh) {
+                bestHigh = a.getPrice() / snap.week52High();
+                nearHigh = a;
+            }
+            if (MarketFormat.known(snap.dayHigh()) && MarketFormat.known(snap.dayLow()) && snap.dayLow() > 0
+                    && (snap.dayHigh() - snap.dayLow()) / snap.dayLow() > bestRange) {
+                bestRange = (snap.dayHigh() - snap.dayLow()) / snap.dayLow();
+                widest = a;
+            }
+        }
+        if (mostActive == null) {
+            activityStrip.add(createActivityCard("MOST ACTIVELY TRADED", "-", MarketFormat.NA, "Loading volumes...", Theme.ACCENT));
+        } else {
+            String c = MarketFormat.currency(mostActive.getSymbol());
+            activityStrip.add(createActivityCard("MOST ACTIVELY TRADED", mostActive.getSymbol(),
+                    MarketFormat.volume(marketData.snapshot(mostActive).volume()), MarketFormat.big(c, bestTurnover) + " turnover today", Theme.ACCENT));
+        }
+        if (surge == null) {
+            activityStrip.add(createActivityCard("VOLUME SURGE", "-", MarketFormat.NA, "Needs daily volume history", Theme.GAIN));
+        } else {
+            activityStrip.add(createActivityCard(String.format(Locale.US, "VOLUME SURGE (%.1fX)", bestSurge), surge.getSymbol(),
+                    MarketFormat.signedPct(surge.getChangePercent()),
+                    MarketFormat.volume(marketData.snapshot(surge).volume()) + " vs " + MarketFormat.volume(marketData.averageVolume(surge, 10)) + " 10-day avg", Theme.GAIN));
+        }
+        if (nearHigh == null) {
+            activityStrip.add(createActivityCard("CLOSEST TO 52-WEEK HIGH", "-", MarketFormat.NA, "Loading 52-week ranges...", Theme.WARNING));
+        } else {
+            String c = MarketFormat.currency(nearHigh.getSymbol());
+            activityStrip.add(createActivityCard("CLOSEST TO 52-WEEK HIGH", nearHigh.getSymbol(), MarketFormat.price(c, nearHigh.getPrice()),
+                    String.format(Locale.US, "%.1f%% of 52W high %s", bestHigh * 100, MarketFormat.price(c, marketData.snapshot(nearHigh).week52High())), Theme.WARNING));
+        }
+        if (widest == null) {
+            activityStrip.add(createActivityCard("WIDEST DAY RANGE", "-", MarketFormat.NA, "Loading day ranges...", Theme.ACCENT));
+        } else {
+            activityStrip.add(createActivityCard("WIDEST DAY RANGE", widest.getSymbol(), String.format(Locale.US, "%.2f%%", bestRange * 100),
+                    "High-low swing today (most volatile)", Theme.ACCENT));
+        }
+        activityStrip.revalidate();
+        activityStrip.repaint();
     }
 
     private JPanel createActivityCard(String label, String sym, String metric, String desc, Color accent) {
@@ -1273,8 +1407,11 @@ public class MarketPanel extends BasePanel {
         stats.setOpaque(false);
         stats.setMaximumSize(new Dimension(320, 80));
 
-        stats.add(createDrawerStat("Day High / Low", Formatter.money(a.getPrice() * 1.015) + " / " + Formatter.money(a.getPrice() * 0.985)));
-        stats.add(createDrawerStat("24h Volume", "6.42M"));
+        MarketSnapshot snap = marketData != null ? marketData.snapshot(a) : null;
+        String c = MarketFormat.currency(a.getSymbol());
+        stats.add(createDrawerStat("Day High / Low", snap == null ? MarketFormat.NA
+                : MarketFormat.price(c, snap.dayHigh()) + " / " + MarketFormat.price(c, snap.dayLow())));
+        stats.add(createDrawerStat("Day Volume", snap == null ? MarketFormat.NA : MarketFormat.volume(snap.volume())));
         stats.add(createDrawerStat("Type / Risk", a.getType() + " / " + a.getRiskLevel()));
         stats.add(createDrawerStat("Volatility", String.format("%.2f%%", a.getVolatility() * 100.0)));
 
@@ -1294,7 +1431,10 @@ public class MarketPanel extends BasePanel {
         nTitle.setFont(Theme.MICRO.deriveFont(Font.BOLD, 8f));
         nTitle.setForeground(Theme.TXT_MUTED);
 
-        JLabel nText = new JLabel("<html>Institutional buy orders accelerating ahead of session close; market depth remains strongly bid.</html>");
+        List<NewsItem> news = marketData != null ? marketData.news(a) : List.of();
+        JLabel nText = new JLabel("<html>" + (news.isEmpty() ? "No headlines loaded yet."
+                : news.get(0).title().replace("<", "&lt;") + " <i>(" + news.get(0).publisher() + ", "
+                + MarketFormat.timeAgo(news.get(0).timeMillis()) + ")</i>") + "</html>");
         nText.setFont(Theme.MICRO);
         nText.setForeground(Theme.TXT_SECONDARY);
 
@@ -1414,10 +1554,70 @@ public class MarketPanel extends BasePanel {
         }
     }
 
+    /** Gives the page real index levels, volumes, market caps and news. */
+    public void setMarketData(MarketDataService marketData) {
+        this.marketData = marketData;
+        marketDataRef = marketData;
+    }
+
+    /** Header strip: breadth of the app's assets, a real volatility index, and today's turnover. */
+    private void refreshHeaderStats() {
+        int up = 0;
+        int down = 0;
+        int flat = 0;
+        double turnover = 0;
+        for (Asset a : marketService.getAllAssets()) {
+            boolean inRegion = switch (currentRegion) {
+                case INDIA -> isIndianAsset(a.getSymbol());
+                case USA -> !isIndianAsset(a.getSymbol()) && !(a instanceof Crypto);
+                case CRYPTO -> a instanceof Crypto;
+            };
+            if (!inRegion) {
+                continue;
+            }
+            if (a.getChangePercent() > 0.001) up++;
+            else if (a.getChangePercent() < -0.001) down++;
+            else flat++;
+            if (marketData != null) {
+                double v = marketData.snapshot(a).volume();
+                if (MarketFormat.known(v)) {
+                    turnover += v * a.getPrice();
+                }
+            }
+        }
+        breadthLbl.setText("Breadth: " + up + " ▲ / " + down + " ▼ / " + flat + " •");
+        String cur = currentRegion == Region.INDIA ? "₹" : "$";
+        dayVolLbl.setText("Day Turnover: " + (turnover > 0 ? MarketFormat.big(cur, turnover) : MarketFormat.NA));
+        if (currentRegion == Region.CRYPTO) {
+            double[] cap = marketData == null ? null : marketData.cryptoMarketCap().orElse(null);
+            vixLbl.setText("Crypto MCap 24h: " + (cap == null ? MarketFormat.NA : MarketFormat.signedPct(cap[1])));
+            vixLbl.setForeground(cap == null || cap[1] >= 0 ? Theme.GAIN : Theme.LOSS);
+        } else {
+            String sym = currentRegion == Region.INDIA ? "^INDIAVIX" : "^VIX";
+            MarketSnapshot vix = marketData == null ? null : marketData.index(sym).orElse(null);
+            vixLbl.setText((currentRegion == Region.INDIA ? "India VIX: " : "VIX: ") + (vix == null ? MarketFormat.NA
+                    : String.format(Locale.US, "%.2f %s", vix.price(), MarketFormat.signedPct(vix.changePercent()))));
+            // a FALLING fear index is good news, so it is shown in green
+            vixLbl.setForeground(vix == null || vix.change() <= 0 ? Theme.GAIN : Theme.LOSS);
+        }
+    }
+
     @Override
     public void refresh() {
         // Re-filter table with live prices
         filterTable();
+
+        // Real index cards / header / sectors / activity (rebuilt only every few seconds to avoid flicker)
+        refreshHeaderStats();
+        String indexKey = String.join("|", java.util.Arrays.stream(indexCardsData()).map(r -> String.join(",", r)).toList());
+        if (!indexKey.equals(shownIndexKey)) {
+            shownIndexKey = indexKey;
+            rebuildIndexCards();
+        }
+        if (refreshTick++ % 5 == 0) {
+            rebuildSectorStrip();
+            rebuildActivityStrip();
+        }
 
         // Update Movers Dock
         List<Asset> all = marketService.getAllAssets();
@@ -1553,8 +1753,9 @@ public class MarketPanel extends BasePanel {
                 case 3 -> a.getPrice() - a.getPreviousClose();
                 case 4 -> a.getChangePercent();
                 case 5 -> a;
-                case 6 -> "6.42M";
-                case 7 -> isIndianAsset(a.getSymbol()) ? "₹19.92L Cr" : "$2.84T";
+                case 6 -> marketData == null ? MarketFormat.NA : MarketFormat.volume(marketData.snapshot(a).volume());
+                case 7 -> marketData == null ? MarketFormat.NA : marketData.fundamentals(a)
+                        .map(f -> MarketFormat.big(MarketFormat.currency(a.getSymbol()), f.marketCap())).orElse(MarketFormat.NA);
                 case 8 -> a;
                 case 9 -> a;
                 default -> "";
@@ -1678,14 +1879,18 @@ public class MarketPanel extends BasePanel {
         }
     }
 
+    /** The range renderer is static, so it reads the data service through this reference. */
+    private static MarketDataService marketDataRef;
+
     private static class RangeGaugeCellRenderer extends DefaultTableCellRenderer {
         @Override
         public Component getTableCellRendererComponent(JTable t, Object value, boolean isSelected, boolean hasFocus, int row, int col) {
             if (!(value instanceof Asset a)) return super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, col);
 
             double p = a.getPrice();
-            double low = p * 0.985;
-            double high = p * 1.015;
+            MarketSnapshot snap = marketDataRef != null ? marketDataRef.snapshot(a) : null;
+            double low = snap != null && MarketFormat.known(snap.dayLow()) ? snap.dayLow() : Math.min(p, a.getPreviousClose());
+            double high = snap != null && MarketFormat.known(snap.dayHigh()) ? snap.dayHigh() : Math.max(p, a.getPreviousClose());
             boolean isUp = a.getChangePercent() >= 0;
 
             JPanel gauge = new JPanel() {
