@@ -1,5 +1,9 @@
 package com.papertrader.ui;
 
+import com.papertrader.model.MarketSnapshot;
+import com.papertrader.service.MarketDataService;
+import com.papertrader.util.MarketFormat;
+import com.papertrader.util.MarketHours;
 import com.papertrader.service.ChartService;
 import com.papertrader.exception.SimulatorException;
 import com.papertrader.model.Asset;
@@ -110,6 +114,9 @@ public class TradePanel extends BasePanel {
     private final JLabel kpiPnlVal = new JLabel("+$0.00");
     private final JLabel kpiPnlPct = new JLabel("▲ +0.00%");
     private final JLabel kpiFilledCount = new JLabel("0 Filled Positions");
+    private final JLabel kpiPowerSub = new JLabel("Cash you can spend now");
+    private final List<Double> portfolioHistory = new ArrayList<>();
+    private MarketDataService marketData;
 
     // Active Asset Telemetry Bar
     private final JLabel assetAvatar = new JLabel("R", SwingConstants.CENTER);
@@ -374,18 +381,18 @@ public class TradePanel extends BasePanel {
         grid.setMaximumSize(new Dimension(Short.MAX_VALUE, 76));
 
         // 1. Available Cash
-        grid.add(buildKpiCard("AVAILABLE CASH", "Simulated Pool", kpiCashVal, kpiCashEq, Theme.ACCENT, false));
+        grid.add(buildKpiCard("AVAILABLE CASH", new JLabel("Simulated Pool"), kpiCashVal, kpiCashEq, Theme.ACCENT, false));
         // 2. Portfolio Value with Sparkline
-        grid.add(buildKpiCard("PORTFOLIO VALUE", "+2.40%", kpiPortVal, new JLabel("All Assets"), Theme.GAIN, true));
-        // 3. Buying Power
-        grid.add(buildKpiCard("BUYING POWER", "2x Margin On", kpiPowerVal, new JLabel("Intraday Headroom · Healthy"), Theme.ACCENT, false));
-        // 4. Today's Realized P&L
-        grid.add(buildKpiCard("TODAY'S REALIZED P&L", "Green Session", kpiPnlVal, kpiFilledCount, Theme.GAIN, false));
+        grid.add(buildKpiCard("PORTFOLIO VALUE", kpiPortPct, kpiPortVal, new JLabel("Holdings at live prices"), Theme.GAIN, true));
+        // 3. Buying Power (this simulator has no margin: you can spend your cash)
+        grid.add(buildKpiCard("BUYING POWER", new JLabel("Cash · No Margin"), kpiPowerVal, kpiPowerSub, Theme.ACCENT, false));
+        // 4. Today's Realized P&L (profit locked in by today's sells)
+        grid.add(buildKpiCard("TODAY'S REALIZED P&L", kpiPnlPct, kpiPnlVal, kpiFilledCount, Theme.GAIN, false));
 
         return grid;
     }
 
-    private JPanel buildKpiCard(String title, String pillText, JLabel valLbl, JLabel subLbl, Color accentColor, boolean withSparkline) {
+    private JPanel buildKpiCard(String title, JLabel pLbl, JLabel valLbl, JLabel subLbl, Color accentColor, boolean withSparkline) {
         JPanel card = new JPanel(new BorderLayout(4, 2));
         card.setOpaque(true);
         card.setBackground(Theme.CARD_BG);
@@ -401,10 +408,6 @@ public class TradePanel extends BasePanel {
         tLbl.setFont(Theme.MICRO.deriveFont(Font.BOLD, 8.5f));
         tLbl.setForeground(Theme.TXT_MUTED);
 
-        JLabel pLbl = (pillText.startsWith("+") || pillText.startsWith("▲")) ? kpiPnlPct : new JLabel(pillText);
-        if (pLbl != kpiPnlPct && pillText.startsWith("+")) {
-            pLbl = kpiPortPct;
-        }
         pLbl.setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 8.5f));
         pLbl.setForeground(accentColor);
         pLbl.setOpaque(true);
@@ -431,11 +434,22 @@ public class TradePanel extends BasePanel {
                     g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                     int w = getWidth();
                     int h = getHeight();
-                    int[] xs = {1, 10, 20, 30, 40, 52};
-                    int[] ys = {h - 3, h - 6, h - 12, h - 8, h - 14, 2};
-                    g2.setColor(Theme.GAIN);
-                    g2.setStroke(new BasicStroke(1.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                    g2.drawPolyline(xs, ys, 6);
+                    // real portfolio values seen while this page was open
+                    int n = portfolioHistory.size();
+                    if (n >= 2) {
+                        double min = portfolioHistory.stream().mapToDouble(Double::doubleValue).min().orElse(0);
+                        double max = portfolioHistory.stream().mapToDouble(Double::doubleValue).max().orElse(0);
+                        int[] xs = new int[n];
+                        int[] ys = new int[n];
+                        for (int i = 0; i < n; i++) {
+                            xs[i] = 1 + i * (w - 3) / (n - 1);
+                            ys[i] = max == min ? h / 2 : (int) (h - 2 - (portfolioHistory.get(i) - min) / (max - min) * (h - 4));
+                        }
+                        boolean up = portfolioHistory.get(n - 1) >= portfolioHistory.get(0);
+                        g2.setColor(up ? Theme.GAIN : Theme.LOSS);
+                        g2.setStroke(new BasicStroke(1.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                        g2.drawPolyline(xs, ys, n);
+                    }
                     g2.dispose();
                 }
             };
@@ -1508,14 +1522,22 @@ public class TradePanel extends BasePanel {
         assetDeltaLbl.setText(String.format(Locale.US, "%s%s%,.2f (%s%.2f%%)", sign, cur, delta, sign, deltaPct));
         assetDeltaLbl.setForeground(up ? Theme.GAIN : Theme.LOSS);
 
-        assetHighLbl.setText(String.format(Locale.US, "%s%,.2f", cur, cmp * 1.018));
-        assetLowLbl.setText(String.format(Locale.US, "%s%,.2f", cur, cmp * 0.985));
-        assetVolLbl.setText(isIndian ? "6.42M" : "18.2M");
-        assetVwapLbl.setText(String.format(Locale.US, "%s%,.2f", cur, cmp * 0.996));
-        assetSessionLbl.setText(isIndian ? "LIVE · 09:15-15:30 IST" : "US MARKETS OPEN");
+        if (marketData != null) {
+            MarketSnapshot snap = marketData.snapshot(currentAsset);
+            assetHighLbl.setText(MarketFormat.price(cur, snap.dayHigh()));
+            assetLowLbl.setText(MarketFormat.price(cur, snap.dayLow()));
+            assetVolLbl.setText(MarketFormat.volume(snap.volume()));
+            assetVwapLbl.setText(MarketFormat.price(cur, marketData.vwap(currentAsset)));
+        }
+        assetSessionLbl.setText(MarketHours.status(currentAsset));
 
         refreshQuickAssetButtons();
         recalculateTicket();
+    }
+
+    /** Real day high / low / volume / VWAP for the selected asset. */
+    public void setMarketData(MarketDataService marketData) {
+        this.marketData = marketData;
     }
 
     /** Connects the candlestick chart to real market history. */
@@ -1530,19 +1552,42 @@ public class TradePanel extends BasePanel {
 
         double cash = user.getAccount().getBalance();
         double portVal = portfolioService.getTotalMarketValue(user);
-        double buyingPower = cash * 2.0; // 2x Margin
-        double pnl = portfolioService.getTotalProfitLoss(user);
+        double buyingPower = cash;   // no margin / leverage in this simulator
+        double unrealized = portfolioService.getTotalProfitLoss(user);
         double costBasis = portfolioService.getTotalCostBasis(user);
-        double pnlPct = costBasis > 0 ? (pnl / costBasis * 100.0) : 0.0;
+        double unrealizedPct = costBasis > 0 ? (unrealized / costBasis * 100.0) : 0.0;
+
+        // today's realized P&L = profit locked in by SELL trades made today
+        java.time.LocalDate today = java.time.LocalDate.now();
+        double pnl = 0;
+        int tradesToday = 0;
+        for (Transaction t : tradingService.getTransactionHistory(user)) {
+            if (t.getTimestamp().toLocalDate().equals(today)) {
+                tradesToday++;
+                if (t.getSide() == OrderSide.SELL) {
+                    pnl += t.getRealizedPnl();
+                }
+            }
+        }
+        double netWorthNow = portfolioService.getNetWorth(user);
+        double pnlPct = netWorthNow > 0 ? pnl / netWorthNow * 100.0 : 0.0;   // as % of the account
+
+        portfolioHistory.add(portVal);
+        if (portfolioHistory.size() > 120) {
+            portfolioHistory.remove(0);
+        }
 
         headerCashVal.setText(Formatter.money(cash));
         kpiCashVal.setText(Formatter.money(cash));
         kpiCashEq.setText(Formatter.money(cash) + " USD eq.");
         kpiPortVal.setText(Formatter.money(portVal));
-        kpiPortPct.setText(String.format("+%.2f%%", 2.40));
+        kpiPortPct.setText(String.format("%s%.2f%%", unrealized >= 0 ? "+" : "", unrealizedPct));
+        kpiPortPct.setForeground(unrealized >= 0 ? Theme.GAIN : Theme.LOSS);
         kpiPowerVal.setText(Formatter.money(buyingPower));
         kpiPnlVal.setText(Formatter.signedMoney(pnl));
-        kpiPnlPct.setText(String.format("▲ %s%.2f%%", pnl >= 0 ? "+" : "", pnlPct));
+        kpiPnlVal.setForeground(pnl >= 0 ? Theme.GAIN : Theme.LOSS);
+        kpiPnlPct.setText(String.format("%s %s%.2f%%", pnl >= 0 ? "▲" : "▼", pnl >= 0 ? "+" : "", pnlPct));
+        kpiPnlPct.setForeground(pnl >= 0 ? Theme.GAIN : Theme.LOSS);
 
         List<Order> pending = tradingService.getPendingOrders(user);
         tabBtnOpen.setText("Active Open Orders (" + pending.size() + ")");
@@ -1550,7 +1595,7 @@ public class TradePanel extends BasePanel {
 
         List<Transaction> history = tradingService.getTransactionHistory(user);
         tabBtnExec.setText("Order History / Executions (" + history.size() + ")");
-        kpiFilledCount.setText(history.size() + " Filled Positions");
+        kpiFilledCount.setText(tradesToday + " trades today · " + history.size() + " in total");
         execHistoryModel.setTransactions(history);
 
         updateSelectedAssetUI();

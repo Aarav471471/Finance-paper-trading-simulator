@@ -1,6 +1,10 @@
 package com.papertrader.ui.components;
 
+import com.papertrader.analytics.EquityPoint;
+import com.papertrader.model.Candle;
 import com.papertrader.model.User;
+import com.papertrader.service.AnalyticsService;
+import com.papertrader.service.ChartService;
 import com.papertrader.service.MarketService;
 import com.papertrader.service.PortfolioService;
 import com.papertrader.service.TradingService;
@@ -28,7 +32,9 @@ import java.awt.Polygon;
 import java.awt.RenderingHints;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -95,6 +101,9 @@ public class PortfolioPerformanceChart extends JPanel {
     // Cached service references
     private User currentUser;
     private PortfolioService portfolioService;
+    private AnalyticsService analytics;
+    private ChartService charts;
+    private MarketService marketService;
 
     private Point mousePoint = null;
     private int hoveredIndex = -1;
@@ -332,99 +341,130 @@ public class PortfolioPerformanceChart extends JPanel {
         repaint();
     }
 
+    /**
+     * Gives the chart its REAL data: the saved account values (AnalyticsService records net worth
+     * every 15 seconds) and SPY candles for the S&P 500 comparison line.
+     */
+    public void setDataSources(AnalyticsService analytics, ChartService charts, MarketService market) {
+        this.analytics = analytics;
+        this.charts = charts;
+        this.marketService = market;
+    }
+
     private void recalculateCurve() {
         dataPoints.clear();
         candlePoints.clear();
         if (currentUser == null || portfolioService == null) return;
 
         this.currentEquity = portfolioService.getNetWorth(currentUser);
-        double pnl = portfolioService.getTotalProfitLoss(currentUser);
-        double costBasis = portfolioService.getTotalCostBasis(currentUser);
-        double pct = costBasis > 0 ? (pnl / costBasis * 100.0) : (startingBaseline > 0 ? ((currentEquity - startingBaseline) / startingBaseline * 100.0) : 0.0);
 
-        heroVal.setText(Formatter.money(currentEquity));
-        String sign = pnl >= 0 ? "+" : "";
-        retPill.setText(sign + Formatter.money(pnl) + " (" + String.format("%s%.2f%%", sign, pct) + ")");
-        retPill.setForeground(Theme.colorFor(pnl));
-
-        int days = currentTimeframe.getDays();
-        int samples = Math.max(30, Math.min(50, days * 2));
-        int candleCount = Math.max(24, Math.min(36, days + 18));
-
-        DateTimeFormatter df = switch (currentTimeframe) {
-            case ONE_DAY -> DateTimeFormatter.ofPattern("HH:mm");
-            case ONE_WEEK -> DateTimeFormatter.ofPattern("EEE dd");
-            case ONE_MONTH, THREE_MONTHS -> DateTimeFormatter.ofPattern("MMM dd");
-            default -> DateTimeFormatter.ofPattern("MMM yyyy");
-        };
-
-        LocalDateTime now = LocalDateTime.now();
-
-        // Organic financial trajectory
-        double nominalPnl = Math.abs(pnl) > 50.0 ? pnl : (currentEquity * 0.024);
-        double startVal = currentEquity - nominalPnl;
-
-        double spyReturn = switch (currentTimeframe) {
-            case ONE_DAY -> 0.0028;
-            case ONE_WEEK -> 0.0075;
-            case ONE_MONTH -> 0.0185;
-            case THREE_MONTHS -> 0.0420;
-            case SIX_MONTHS -> 0.0760;
-            case ONE_YEAR -> 0.1420;
-            case ALL -> 0.2250;
-        };
-
-        // 1. Line Chart Data Points
-        for (int i = 0; i < samples; i++) {
-            double frac = (double) i / (samples - 1);
-            LocalDateTime t = now.minusHours((long) ((1.0 - frac) * days * 24));
-            String lbl = t.format(df);
-
-            double waveHarmonic = (Math.sin(frac * Math.PI * 2.8) * 0.42 + Math.sin(frac * Math.PI * 5.4) * 0.24) * (1.0 - Math.pow(frac, 3.0));
-            double trend = frac * nominalPnl;
-            double waveAmt = Math.abs(nominalPnl) * waveHarmonic;
-            double val = startVal + trend + waveAmt;
-
-            double benchVal = startVal * (1.0 + spyReturn * frac);
-            dataPoints.add(new ChartPoint(lbl, Math.max(100.0, val), benchVal));
-        }
-
-        if (!dataPoints.isEmpty()) {
-            dataPoints.set(dataPoints.size() - 1, new ChartPoint("Today", currentEquity, startVal * (1.0 + spyReturn)));
-        }
-
-        // 2. Candlestick Points (Slender, authentic Japanese candlesticks with distinct wicks)
-        double prevClose = startVal * 0.998;
-        for (int i = 0; i < candleCount; i++) {
-            double frac = (double) i / (candleCount - 1);
-            LocalDateTime t = now.minusHours((long) ((1.0 - frac) * days * 24));
-            String lbl = t.format(df);
-
-            double waveHarmonic = (Math.sin(frac * Math.PI * 3.2) * 0.38 + Math.cos(frac * Math.PI * 6.5) * 0.22) * (1.0 - Math.pow(frac, 3.0));
-            double trend = frac * nominalPnl;
-            double waveAmt = Math.abs(nominalPnl) * waveHarmonic;
-            double close = startVal + trend + waveAmt;
-
-            if (i == candleCount - 1) {
-                close = currentEquity;
+        // 1. The real equity history inside the chosen range, plus "now"
+        long now = System.currentTimeMillis();
+        long cutoff = now - currentTimeframe.getDays() * 86_400_000L;
+        List<EquityPoint> history = new ArrayList<>();
+        EquityPoint before = null;   // last value before the range starts = where the range begins
+        if (analytics != null) {
+            for (EquityPoint p : analytics.getEquityCurve(currentUser)) {
+                if (p.time() < cutoff) {
+                    before = p;
+                } else {
+                    history.add(p);
+                }
             }
-
-            double open = (i == 0) ? (startVal * 0.998) : prevClose;
-
-            // Generate authentic, prominent wicks (upper & lower shadows)
-            double typicalSpan = Math.abs(close - open);
-            double baseWick = Math.max(currentEquity * 0.0035, typicalSpan * 0.70);
-            double upperWick = baseWick * (0.8 + Math.abs(Math.sin((i + 1) * 3.1)) * 1.5);
-            double lowerWick = baseWick * (0.8 + Math.abs(Math.cos((i + 1) * 4.1)) * 1.5);
-
-            double high = Math.max(open, close) + upperWick;
-            double low = Math.min(open, close) - lowerWick;
-            if (low <= 0) low = close * 0.98;
-
-            double benchVal = startVal * (1.0 + spyReturn * frac);
-            candlePoints.add(new CandlePoint(lbl, t, open, high, low, close, benchVal));
-            prevClose = close;
         }
+        if (before != null) {
+            history.add(0, new EquityPoint(cutoff, before.value()));
+        } else if (history.isEmpty()) {
+            history.add(new EquityPoint(now - 60_000, startingBaseline));
+        }
+        history.add(new EquityPoint(now, currentEquity));
+
+        double startVal = history.get(0).value();
+        double change = currentEquity - startVal;
+        double pct = startVal > 0 ? change / startVal * 100.0 : 0.0;
+        heroVal.setText(Formatter.money(currentEquity));
+        String sign = change >= 0 ? "+" : "";
+        retPill.setText(sign + Formatter.money(change) + " (" + String.format("%s%.2f%%", sign, pct) + ")");
+        retPill.setForeground(Theme.colorFor(change));
+
+        boolean intraday = history.get(history.size() - 1).time() - history.get(0).time() < 2 * 86_400_000L;
+        DateTimeFormatter df = intraday ? DateTimeFormatter.ofPattern("HH:mm") : DateTimeFormatter.ofPattern("MMM dd");
+
+        // 2. S&P 500 benchmark: what the same starting money would be worth in SPY
+        List<Candle> spy = benchmarkCandles(intraday);
+        double spyStart = spyPriceAt(spy, history.get(0).time());
+
+        // 3. Line points (at most 120, evenly picked)
+        int step = Math.max(1, history.size() / 120);
+        for (int i = 0; i < history.size(); i += step) {
+            addLinePoint(history.get(i), df, spy, spyStart, startVal);
+        }
+        EquityPoint last = history.get(history.size() - 1);
+        if (dataPoints.isEmpty() || !dataPoints.get(dataPoints.size() - 1).label().equals("Now")) {
+            dataPoints.add(new ChartPoint("Now", last.value(), benchmark(spy, spyStart, startVal, last.time())));
+        }
+
+        // 4. Candles: equity values grouped into hours (short ranges) or days
+        long bucket = intraday ? 3_600_000L : 86_400_000L;
+        int i = 0;
+        while (i < history.size()) {
+            long slot = history.get(i).time() / bucket;
+            double open = history.get(i).value();
+            double high = open;
+            double low = open;
+            double close = open;
+            long time = history.get(i).time();
+            while (i < history.size() && history.get(i).time() / bucket == slot) {
+                double v = history.get(i).value();
+                high = Math.max(high, v);
+                low = Math.min(low, v);
+                close = v;
+                time = history.get(i).time();
+                i++;
+            }
+            LocalDateTime t = LocalDateTime.ofInstant(Instant.ofEpochMilli(time), ZoneId.systemDefault());
+            candlePoints.add(new CandlePoint(t.format(df), t, open, high, low, close,
+                    benchmark(spy, spyStart, startVal, time)));
+        }
+    }
+
+    private void addLinePoint(EquityPoint p, DateTimeFormatter df, List<Candle> spy, double spyStart, double startVal) {
+        String label = LocalDateTime.ofInstant(Instant.ofEpochMilli(p.time()), ZoneId.systemDefault()).format(df);
+        dataPoints.add(new ChartPoint(label, p.value(), benchmark(spy, spyStart, startVal, p.time())));
+    }
+
+    private List<Candle> benchmarkCandles(boolean intraday) {
+        if (charts == null || marketService == null) {
+            return List.of();
+        }
+        return marketService.findBySymbol("SPY")
+                .map(a -> charts.getCandles(a, intraday ? com.papertrader.model.Timeframe.FIVE_MINUTES
+                        : com.papertrader.model.Timeframe.ONE_DAY))
+                .orElse(List.of());
+    }
+
+    /** Close of the last SPY candle at or before the time (NaN if none). */
+    private static double spyPriceAt(List<Candle> spy, long time) {
+        double price = Double.NaN;
+        for (Candle c : spy) {
+            if (c.time() > time) {
+                break;
+            }
+            price = c.close();
+        }
+        if (Double.isNaN(price) && !spy.isEmpty()) {
+            price = spy.get(0).close();
+        }
+        return price;
+    }
+
+    /** Starting money grown like SPY; equal to the start value while SPY data is missing. */
+    private static double benchmark(List<Candle> spy, double spyStart, double startVal, long time) {
+        double now = spyPriceAt(spy, time);
+        if (Double.isNaN(now) || Double.isNaN(spyStart) || spyStart <= 0) {
+            return startVal;
+        }
+        return startVal * now / spyStart;
     }
 
     private void updateHoveredIndex() {
