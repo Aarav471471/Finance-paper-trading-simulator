@@ -93,7 +93,9 @@ public class MainFrame extends JFrame {
         dashboardPanel.setDataSources(ctx.analytics(), ctx.charts());
 
         pages.put("Dashboard", dashboardPanel);
-        pages.put("Markets", new MarketPanel(marketService, navHandler));
+        MarketPanel marketPanel = new MarketPanel(marketService, navHandler);
+        marketPanel.setMarketData(ctx.marketData());
+        pages.put("Markets", marketPanel);
         pages.put("Stock Details", stockDetailsPanel);
         pages.put("Trade", tradePanel);
         PortfolioPanel portfolioPanel = new PortfolioPanel(authService, marketService, portfolioService, tradingService, navHandler);
