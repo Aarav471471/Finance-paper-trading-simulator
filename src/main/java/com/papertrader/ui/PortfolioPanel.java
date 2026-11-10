@@ -1,5 +1,6 @@
 package com.papertrader.ui;
 
+import java.util.HashMap;
 import com.papertrader.interfaces.Exportable;
 import com.papertrader.model.Asset;
 import com.papertrader.model.Holding;
@@ -639,10 +640,20 @@ public class PortfolioPanel extends BasePanel {
         double pnl = value - cost;
         double pnlPct = cost == 0 ? 0 : (pnl / cost * 100.0);
 
+        // Realized P&L = profit locked in by sales (saved on every SELL transaction)
+        Map<String, Double> realizedBySymbol = new HashMap<>();
+        for (Transaction t : tradingService.getTransactionHistory(user)) {
+            if (t.getSide() == OrderSide.SELL) {
+                realizedBySymbol.merge(t.getSymbol(), t.getRealizedPnl(), Double::sum);
+            }
+        }
+        double realized = tradingService.getRealizedProfitLoss(user);
+
         // 1. Update 5 KPI Cards
         cardNetWorth.updateValues(netWorth, pnl, pnlPct);
         cardInvested.updateValues(cost, netWorth, user.getPortfolio().getHoldings().size());
-        cardReturns.updateValues(pnl, pnlPct);
+        // total return = realized (closed trades) + unrealized (open positions)
+        cardReturns.updateValues(pnl + realized, cost == 0 ? 0 : ((pnl + realized) / cost * 100.0));
 
         // Intraday calculation
         double todayPnl = calculateTodayPnl(user);
@@ -678,7 +689,7 @@ public class PortfolioPanel extends BasePanel {
 
             rows.add(new HoldingRowData(h, a, h.getSymbol(), name, ex, sector,
                     h.getQuantity(), h.getAverageCost(), cmp, prevClose, cBasis, mktVal,
-                    hPnl, hPnlPct, weight, hist));
+                    hPnl, hPnlPct, weight, hist, realizedBySymbol.getOrDefault(h.getSymbol(), 0.0)));
         }
 
         // 4. Update Table Model
@@ -687,7 +698,8 @@ public class PortfolioPanel extends BasePanel {
 
         // 5. Update Table Footer
         tableFooterSummaryLbl.setText(String.format("Showing all %d verified simulated market entries across 3 clearing channels", rows.size()));
-        tableFooterMarginLbl.setText(String.format("Unrealized Margin: %s%s", pnl >= 0 ? "+" : "-", Formatter.money(Math.abs(pnl))));
+        tableFooterMarginLbl.setText(String.format("Unrealized: %s   ·   Realized: %s",
+                Formatter.signedMoney(pnl), Formatter.signedMoney(realized)));
 
         // 6. Update Asset Allocation Donut
         allocationCard.updateData(user, rows, cash, netWorth);
@@ -1046,7 +1058,8 @@ public class PortfolioPanel extends BasePanel {
             double pnlVal,
             double pnlPct,
             double portfolioWeight,
-            List<Double> trendHistory
+            List<Double> trendHistory,
+            double realizedPnl          // profit already locked in by selling this symbol
     ) {}
 
     // =========================================================================
@@ -1437,8 +1450,9 @@ public class PortfolioPanel extends BasePanel {
             purchasedLbl.setText("<html><font color='#64748B'>First Purchased: </font><b>14 Aug 2024</b></html>");
             executedLbl.setText("<html><font color='#64748B'>Last Executed: </font><b>2 days ago</b></html>");
 
-            double simRealized = r.investedVal() * 0.04;
-            realizedPnlLbl.setText(String.format(Locale.US, "<html><font color='#64748B'>Realized P&L: </font><font color='#22C55E'><b>+%s%,.2f</b></font></html>", cur, simRealized));
+            double realized = r.realizedPnl();
+            realizedPnlLbl.setText(String.format(Locale.US, "<html><font color='#64748B'>Realized P&L: </font><font color='%s'><b>%s%s%,.2f</b></font></html>",
+                    realized >= 0 ? "#22C55E" : "#EF4444", realized >= 0 ? "+" : "-", cur, Math.abs(realized)));
             weightLbl.setText(String.format(Locale.US, "<html><font color='#64748B'>Portfolio Weight: </font><b>%.2f%%</b></html>", r.portfolioWeight()));
             sectorLbl.setText("<html><font color='#64748B'>Sector: </font><font color='#3B82F6'><b>" + r.sector() + "</b></font></html>");
 

@@ -79,8 +79,10 @@ public class MainFrame extends JFrame {
         double startingCash = ctx.startingCash();
 
         TradePanel tradePanel = new TradePanel(authService, marketService, tradingService, portfolioService);
+        tradePanel.setChartService(ctx.charts());
         StockDetailsPanel stockDetailsPanel = new StockDetailsPanel(authService, marketService,
                 tradingService, portfolioService, target -> handleNavigation(target, tradePanel, null));
+        stockDetailsPanel.setChartService(ctx.charts());
 
         Consumer<String> navHandler = target -> handleNavigation(target, tradePanel, stockDetailsPanel);
 

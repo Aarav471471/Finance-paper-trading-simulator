@@ -3,6 +3,7 @@ package com.papertrader.ui.components;
 import com.papertrader.exception.SimulatorException;
 import com.papertrader.model.Asset;
 import com.papertrader.model.LimitOrder;
+import com.papertrader.model.StopLossOrder;
 import com.papertrader.model.OrderSide;
 import com.papertrader.model.Transaction;
 import com.papertrader.model.User;
@@ -75,7 +76,7 @@ public class StockTradeTicketPanel extends JPanel {
 
     // Financial Breakdown
     private final JLabel lblEstVal = new JLabel("₹0.00");
-    private final JLabel lblBrokerage = new JLabel("0.00 (Zero Fee)");
+    private final JLabel lblBrokerage = new JLabel("0.1% fee");
     private final JLabel lblMarginAvail = new JLabel("₹0.00");
     private final JLabel lblRemBalance = new JLabel("₹0.00");
 
@@ -653,14 +654,20 @@ public class StockTradeTicketPanel extends JPanel {
 
         try {
             if ("MARKET".equals(orderType)) {
-                tradingService.placeOrder(user, currentAsset, currentSide, quantity);
+                // realistic fill: buyers pay the ask, sellers get the bid, plus slippage
+                double fill = tradingService.placeOrder(user, currentAsset, currentSide, quantity).getFilledPrice();
                 showToast(String.format(Locale.US, "Order Filled: %s %d %s @ %s%,.2f",
-                        currentSide, quantity, currentAsset.getSymbol(), cur, cmp), true);
+                        currentSide, quantity, currentAsset.getSymbol(), cur, fill), true);
             } else if ("LIMIT".equals(orderType)) {
                 double limitP = Double.parseDouble(limitPriceInput.getText().trim());
                 tradingService.placeOrder(user, new LimitOrder(currentAsset, currentSide, quantity, limitP));
                 showToast(String.format(Locale.US, "Limit Placed: %s %d %s @ %s%,.2f",
                         currentSide, quantity, currentAsset.getSymbol(), cur, limitP), true);
+            } else if ("SL-M".equals(orderType)) {
+                double trigger = Double.parseDouble(limitPriceInput.getText().trim());
+                tradingService.placeOrder(user, new StopLossOrder(currentAsset, currentSide, quantity, trigger));
+                showToast(String.format(Locale.US, "Stop-Loss Placed: %s %d %s at %s%,.2f",
+                        currentSide, quantity, currentAsset.getSymbol(), cur, trigger), true);
             }
 
             updateCalculations();

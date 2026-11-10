@@ -1,5 +1,6 @@
 package com.papertrader.ui;
 
+import com.papertrader.service.ChartService;
 import com.papertrader.model.Asset;
 import com.papertrader.model.OrderSide;
 import com.papertrader.service.AuthService;
@@ -1166,6 +1167,11 @@ public class StockDetailsPanel extends BasePanel {
 
         revalidate();
         repaint();
+    }
+
+    /** Connects the candlestick chart to real market history. */
+    public void setChartService(ChartService chartService) {
+        chartPanel.setChartService(chartService);
     }
 
     @Override
