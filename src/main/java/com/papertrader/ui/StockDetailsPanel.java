@@ -1,7 +1,16 @@
 package com.papertrader.ui;
 
 import com.papertrader.service.ChartService;
+import com.papertrader.feed.YahooSymbols;
 import com.papertrader.model.Asset;
+import com.papertrader.model.FinancialYear;
+import com.papertrader.model.Fundamentals;
+import com.papertrader.model.MarketSnapshot;
+import com.papertrader.model.NewsItem;
+import com.papertrader.service.MarketDataService;
+import com.papertrader.strategy.TechnicalAnalysis;
+import com.papertrader.util.MarketFormat;
+import com.papertrader.util.MarketHours;
 import com.papertrader.model.OrderSide;
 import com.papertrader.service.AuthService;
 import com.papertrader.service.MarketService;
@@ -114,6 +123,36 @@ public class StockDetailsPanel extends BasePanel {
     private final JLabel statEps = new JLabel("104.22");
     private final JLabel statRoe = new JLabel("11.8% / 9.6%");
 
+    // Sub-texts under the 8 cards (filled with real numbers in setAsset)
+    private final JLabel[] statSubs = new JLabel[8];
+
+    // Real data source (day stats, fundamentals, news); set from MainFrame
+    private MarketDataService marketData;
+    private Fundamentals shownFundamentals;
+    private List<NewsItem> shownNews;
+    private String shownPeersFor;
+
+    // Section 3 dynamic parts
+    private final JLabel overviewDesc = new JLabel();
+    private final JPanel overviewChips = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+    private final JPanel overviewBars = new JPanel(new GridLayout(2, 2, 10, 6));
+    private final JLabel unitLbl = new JLabel("Consolidated in INR Cr");
+    private final DefaultTableModel financialsModel = new DefaultTableModel() {
+        @Override
+        public boolean isCellEditable(int row, int column) {
+            return false;
+        }
+    };
+    private final JLabel[] solvencyVals = new JLabel[6];
+    private final JLabel[] solvencySubs = new JLabel[6];
+    private final JLabel[] shareVals = new JLabel[4];
+    private final JLabel shareTitle = new JLabel("LATEST SHAREHOLDING PATTERN");
+
+    // Section 4 dynamic parts
+    private final JLabel[] indicatorVals = new JLabel[6];
+    private final JLabel analystVal = new JLabel(MarketFormat.NA);
+    private final JLabel analystCount = new JLabel("");
+
     // Section 3: Screener-Grade Financials (Tabbed)
     private final CardLayout tabsCardLayout = new CardLayout();
     private final JPanel tabsContainer = new JPanel(tabsCardLayout);
@@ -125,9 +164,11 @@ public class StockDetailsPanel extends BasePanel {
     // Section 5: Peer Table
     private final DefaultTableModel peersTableModel = new DefaultTableModel();
     private final JTable peersTable = new JTable(peersTableModel);
+    private final JLabel peersSubLbl = new JLabel("");
 
     // Section 6: News List
     private final JPanel newsContainer = new JPanel();
+    private final JLabel newsSubLbl = new JLabel("Yahoo Finance");
 
     // Right Column: Execution Ticket
     private final StockTradeTicketPanel ticketPanel;
@@ -539,20 +580,19 @@ public class StockDetailsPanel extends BasePanel {
         JPanel grid = new JPanel(new GridLayout(2, 4, 8, 8));
         grid.setOpaque(false);
 
-        grid.add(buildStatTile("PREV. CLOSE", statPrevClose, "Gap-up: +32.75", Theme.TXT_MUTED));
-        grid.add(buildStatTile("OPEN PRICE", statOpen, "+1.14% at Open", new Color(0x4A, 0xE1, 0x76)));
-        grid.add(buildStatTile("MARKET CAP", statMcap, "Rank #1 in India", Theme.ACCENT));
-        grid.add(buildStatTile("VOLUME (20D AVG)", statVol, "1.10x Avg Vol", new Color(0x4A, 0xE1, 0x76)));
-        grid.add(buildStatTile("P/E RATIO (TTM)", statPe, "Attractive (-5.3%)", new Color(0x4A, 0xE1, 0x76)));
-        grid.add(buildStatTile("BOOK VALUE & P/B", statBook, "Tangible Net Worth", Theme.TXT_MUTED));
-        grid.add(buildStatTile("EPS (TTM)", statEps, "+14.2% YoY Growth", new Color(0x4A, 0xE1, 0x76)));
-        grid.add(buildStatTile("ROCE / ROE", statRoe, "Stable Return Profile", Theme.TXT_MUTED));
+        String[] titles = {"PREV. CLOSE", "OPEN PRICE", "MARKET CAP", "VOLUME (TODAY)",
+                "P/E RATIO (TTM)", "BOOK VALUE & P/B", "EPS (TTM)", "ROE / ROA"};
+        JLabel[] values = {statPrevClose, statOpen, statMcap, statVol, statPe, statBook, statEps, statRoe};
+        for (int i = 0; i < 8; i++) {
+            statSubs[i] = new JLabel(" ");
+            grid.add(buildStatTile(titles[i], values[i], statSubs[i]));
+        }
 
         sec.add(grid);
         return sec;
     }
 
-    private JPanel buildStatTile(String label, JLabel valLbl, String subtext, Color subColor) {
+    private JPanel buildStatTile(String label, JLabel valLbl, JLabel sub) {
         JPanel tile = new JPanel();
         tile.setLayout(new BoxLayout(tile, BoxLayout.Y_AXIS));
         tile.setOpaque(true);
@@ -568,9 +608,8 @@ public class StockDetailsPanel extends BasePanel {
         valLbl.setFont(Theme.MONO_BODY.deriveFont(Font.BOLD, 12f));
         valLbl.setForeground(Color.WHITE);
 
-        JLabel sub = new JLabel(subtext);
         sub.setFont(Theme.MICRO.deriveFont(8f));
-        sub.setForeground(subColor);
+        sub.setForeground(Theme.TXT_MUTED);
 
         tile.add(l);
         tile.add(Box.createVerticalStrut(3));
@@ -616,10 +655,9 @@ public class StockDetailsPanel extends BasePanel {
         }
         navBar.add(tabGroup, BorderLayout.WEST);
 
-        JLabel unit = new JLabel("Consolidated in INR Cr");
-        unit.setFont(Theme.MICRO);
-        unit.setForeground(Theme.TXT_MUTED);
-        navBar.add(unit, BorderLayout.EAST);
+        unitLbl.setFont(Theme.MICRO);
+        unitLbl.setForeground(Theme.TXT_MUTED);
+        navBar.add(unitLbl, BorderLayout.EAST);
         sec.add(navBar, BorderLayout.NORTH);
 
         // 4 Panes in CardLayout
@@ -660,45 +698,47 @@ public class StockDetailsPanel extends BasePanel {
         p.add(title);
         p.add(Box.createVerticalStrut(4));
 
-        JLabel desc = new JLabel("<html><body style='width: 600px; color: #DCE2F7; font-family: Inter; font-size: 11px; line-height: 1.4;'>"
-                + "<strong>Reliance Industries Limited (RIL)</strong> is India's largest private sector corporation and a Fortune 500 company. "
-                + "Operations encompass hydrocarbon exploration, refining, petrochemicals, telecommunications via <em>Jio Platforms</em>, "
-                + "organized retail via <em>Reliance Retail</em>, digital media, and giga-scale new energy manufacturing."
-                + "</body></html>");
-        p.add(desc);
+        overviewDesc.setText(descriptionHtml("Loading company profile..."));
+        p.add(overviewDesc);
         p.add(Box.createVerticalStrut(8));
 
-        // Chips
-        JPanel chips = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-        chips.setOpaque(false);
-        for (String c : List.of("CMD: Mukesh D. Ambani", "Incorporated: 1973", "HQ: Maker Chambers IV, Mumbai", "Employees: 347,000+")) {
-            JLabel chip = new JLabel(c);
-            chip.setFont(Theme.MONO_TINY.deriveFont(8.5f));
-            chip.setForeground(Theme.TXT_SECONDARY);
-            chip.setOpaque(true);
-            chip.setBackground(new Color(0x23, 0x2A, 0x3A));
-            chip.setBorder(BorderFactory.createEmptyBorder(3, 6, 3, 6));
-            chips.add(chip);
-        }
-        p.add(chips);
+        // Chips (CEO, sector, HQ, employees) - filled from Yahoo Finance
+        overviewChips.setOpaque(false);
+        overviewChips.setAlignmentX(Component.LEFT_ALIGNMENT);
+        p.add(overviewChips);
         p.add(Box.createVerticalStrut(10));
 
-        // Segment breakdown bars
-        JLabel segTitle = new JLabel("EBITDA SHARE BY BUSINESS SEGMENT");
+        // Profitability bars
+        JLabel segTitle = new JLabel("KEY PROFITABILITY RATIOS");
         segTitle.setFont(Theme.MICRO.deriveFont(Font.BOLD, 9f));
         segTitle.setForeground(Theme.TXT_MUTED);
         p.add(segTitle);
         p.add(Box.createVerticalStrut(6));
 
-        JPanel segGrid = new JPanel(new GridLayout(2, 2, 10, 6));
-        segGrid.setOpaque(false);
-        segGrid.add(buildSegmentBar("Oil to Chemicals (O2C)", 42, new Color(0x4D, 0x8E, 0xFF)));
-        segGrid.add(buildSegmentBar("Digital Services (Jio)", 31, new Color(0x4A, 0xE1, 0x76)));
-        segGrid.add(buildSegmentBar("Reliance Retail", 21, new Color(0x06, 0xB6, 0xD4)));
-        segGrid.add(buildSegmentBar("Oil & Gas Upstream", 6, new Color(0xF5, 0x9E, 0x0B)));
-        p.add(segGrid);
+        overviewBars.setOpaque(false);
+        overviewBars.setAlignmentX(Component.LEFT_ALIGNMENT);
+        p.add(overviewBars);
 
         return p;
+    }
+
+    private static String descriptionHtml(String text) {
+        String safe = text.replace("&", "&amp;").replace("<", "&lt;");
+        if (safe.length() > 600) {
+            safe = safe.substring(0, 600) + "...";
+        }
+        return "<html><body style='width: 600px; color: #DCE2F7; font-family: Inter; font-size: 11px; line-height: 1.4;'>"
+                + safe + "</body></html>";
+    }
+
+    private JLabel chip(String text) {
+        JLabel chip = new JLabel(text);
+        chip.setFont(Theme.MONO_TINY.deriveFont(8.5f));
+        chip.setForeground(Theme.TXT_SECONDARY);
+        chip.setOpaque(true);
+        chip.setBackground(new Color(0x23, 0x2A, 0x3A));
+        chip.setBorder(BorderFactory.createEmptyBorder(3, 6, 3, 6));
+        return chip;
     }
 
     private JPanel buildSegmentBar(String name, int pct, Color barColor) {
@@ -711,7 +751,7 @@ public class StockDetailsPanel extends BasePanel {
         lName.setFont(Theme.MICRO);
         lName.setForeground(Theme.TXT_SECONDARY);
 
-        JLabel lPct = new JLabel(pct + "%");
+        JLabel lPct = new JLabel(pct < 0 ? MarketFormat.NA : pct + "%");
         lPct.setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 8.5f));
         lPct.setForeground(barColor);
 
@@ -720,7 +760,7 @@ public class StockDetailsPanel extends BasePanel {
         wrap.add(lbls, BorderLayout.NORTH);
 
         JProgressBar pb = new JProgressBar(0, 100);
-        pb.setValue(pct);
+        pb.setValue(Math.max(0, Math.min(100, pct)));
         pb.setForeground(barColor);
         pb.setBackground(new Color(0x23, 0x2A, 0x3A));
         pb.setBorderPainted(false);
@@ -738,19 +778,9 @@ public class StockDetailsPanel extends BasePanel {
                 new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 6, 1),
                 BorderFactory.createEmptyBorder(6, 6, 6, 6)));
 
-        String[] cols = {"Metric (INR Cr)", "FY21", "FY22", "FY23", "FY24", "TTM"};
-        Object[][] data = {
-                {"Sales / Revenue", "486,454", "736,429", "892,944", "997,148", "1,032,580"},
-                {"Operating Expenses", "405,662", "625,924", "750,698", "820,442", "849,210"},
-                {"EBITDA", "80,792", "110,505", "142,246", "176,706", "183,370"},
-                {"OPM %", "16.6%", "15.0%", "15.9%", "17.7%", "17.8%"},
-                {"Other Income", "16,327", "14,947", "11,838", "15,820", "16,410"},
-                {"Depreciation", "26,572", "29,797", "40,303", "50,832", "53,400"},
-                {"Net Profit", "53,739", "67,845", "74,088", "79,020", "82,450"},
-                {"EPS (INR)", "79.48", "90.24", "98.50", "102.15", "104.22"}
-        };
-
-        JTable table = new JTable(data, cols);
+        // filled with the real yearly income statements in applyFundamentals()
+        financialsModel.setDataVector(new Object[][]{{"Loading...", ""}}, new Object[]{"Metric", ""});
+        JTable table = new JTable(financialsModel);
         table.setOpaque(false);
         table.setBackground(new Color(0x14, 0x1B, 0x2B));
         table.setForeground(Theme.TXT_PRIMARY);
@@ -762,9 +792,7 @@ public class StockDetailsPanel extends BasePanel {
 
         DefaultTableCellRenderer rightRenderer = new DefaultTableCellRenderer();
         rightRenderer.setHorizontalAlignment(JLabel.RIGHT);
-        for (int i = 1; i < cols.length; i++) {
-            table.getColumnModel().getColumn(i).setCellRenderer(rightRenderer);
-        }
+        table.setDefaultRenderer(Object.class, rightRenderer);
 
         JScrollPane scroll = new JScrollPane(table);
         scroll.setOpaque(false);
@@ -784,17 +812,18 @@ public class StockDetailsPanel extends BasePanel {
                 new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 6, 1),
                 BorderFactory.createEmptyBorder(10, 12, 10, 12)));
 
-        p.add(buildSolvencyTile("ENTERPRISE VALUE (EV)", "₹21.4 Lakh Cr", "Market Value + Net Debt"));
-        p.add(buildSolvencyTile("DEBT TO EQUITY", "0.38", "Conservative Leverage"));
-        p.add(buildSolvencyTile("INTEREST COVERAGE", "7.42x", "Strong Solvency Cushion"));
-        p.add(buildSolvencyTile("EV / EBITDA", "14.2x", "Industry Peer: 16.8x"));
-        p.add(buildSolvencyTile("FREE CASH FLOW", "₹24,800 Cr", "After Capex & Growth"));
-        p.add(buildSolvencyTile("ALTMAN Z-SCORE", "3.82 (Safe)", "Low Default Probability"));
+        String[] titles = {"ENTERPRISE VALUE (EV)", "DEBT TO EQUITY", "INTEREST COVERAGE",
+                "EV / EBITDA", "FREE CASH FLOW", "NET PROFIT MARGIN"};
+        for (int i = 0; i < 6; i++) {
+            solvencyVals[i] = new JLabel(MarketFormat.NA);
+            solvencySubs[i] = new JLabel(" ");
+            p.add(buildSolvencyTile(titles[i], solvencyVals[i], solvencySubs[i]));
+        }
 
         return p;
     }
 
-    private JPanel buildSolvencyTile(String title, String val, String sub) {
+    private JPanel buildSolvencyTile(String title, JLabel l2, JLabel l3) {
         JPanel t = new JPanel();
         t.setLayout(new BoxLayout(t, BoxLayout.Y_AXIS));
         t.setOpaque(true);
@@ -807,11 +836,9 @@ public class StockDetailsPanel extends BasePanel {
         l1.setFont(Theme.MICRO.deriveFont(Font.BOLD, 8f));
         l1.setForeground(Theme.TXT_MUTED);
 
-        JLabel l2 = new JLabel(val);
         l2.setFont(Theme.MONO_BODY.deriveFont(Font.BOLD, 11f));
         l2.setForeground(Color.WHITE);
 
-        JLabel l3 = new JLabel(sub);
         l3.setFont(Theme.MICRO.deriveFont(8f));
         l3.setForeground(Theme.TXT_SECONDARY);
 
@@ -832,24 +859,26 @@ public class StockDetailsPanel extends BasePanel {
                 new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 6, 1),
                 BorderFactory.createEmptyBorder(10, 12, 10, 12)));
 
-        JLabel title = new JLabel("LATEST SHAREHOLDING PATTERN (Q2)");
-        title.setFont(Theme.MICRO.deriveFont(Font.BOLD, 9f));
-        title.setForeground(Theme.TXT_MUTED);
-        p.add(title);
+        shareTitle.setFont(Theme.MICRO.deriveFont(Font.BOLD, 9f));
+        shareTitle.setForeground(Theme.TXT_MUTED);
+        p.add(shareTitle);
         p.add(Box.createVerticalStrut(10));
 
         JPanel cards = new JPanel(new GridLayout(1, 4, 8, 0));
         cards.setOpaque(false);
-        cards.add(buildShareCard("Promoters", "50.31%", new Color(0x4D, 0x8E, 0xFF)));
-        cards.add(buildShareCard("FII / FPI", "22.14%", new Color(0x4A, 0xE1, 0x76)));
-        cards.add(buildShareCard("DII / MFs", "16.58%", new Color(0x06, 0xB6, 0xD4)));
-        cards.add(buildShareCard("Public & Retail", "10.97%", new Color(0xF5, 0x9E, 0x0B)));
+        String[] holders = {"Insiders / Promoters", "Institutions", "No. of Institutions", "Public & Retail"};
+        Color[] colors = {new Color(0x4D, 0x8E, 0xFF), new Color(0x4A, 0xE1, 0x76),
+                new Color(0x06, 0xB6, 0xD4), new Color(0xF5, 0x9E, 0x0B)};
+        for (int i = 0; i < 4; i++) {
+            shareVals[i] = new JLabel(MarketFormat.NA);
+            cards.add(buildShareCard(holders[i], shareVals[i], colors[i]));
+        }
         p.add(cards);
 
         return p;
     }
 
-    private JPanel buildShareCard(String holder, String pct, Color color) {
+    private JPanel buildShareCard(String holder, JLabel l2, Color color) {
         JPanel c = new JPanel();
         c.setLayout(new BoxLayout(c, BoxLayout.Y_AXIS));
         c.setOpaque(true);
@@ -862,7 +891,6 @@ public class StockDetailsPanel extends BasePanel {
         l1.setFont(Theme.MICRO);
         l1.setForeground(Theme.TXT_MUTED);
 
-        JLabel l2 = new JLabel(pct);
         l2.setFont(Theme.MONO_BODY.deriveFont(Font.BOLD, 13f));
         l2.setForeground(color);
 
@@ -897,12 +925,11 @@ public class StockDetailsPanel extends BasePanel {
 
         JPanel grid = new JPanel(new GridLayout(3, 2, 8, 6));
         grid.setOpaque(false);
-        grid.add(buildIndicatorTile("RSI (14)", "64.20 (Bullish)", new Color(0x4A, 0xE1, 0x76)));
-        grid.add(buildIndicatorTile("MACD (12,26,9)", "+12.40 (Cross Over)", new Color(0x4A, 0xE1, 0x76)));
-        grid.add(buildIndicatorTile("EMA 20", "2,898.40 (Above)", Color.WHITE));
-        grid.add(buildIndicatorTile("EMA 50", "2,842.10 (Above)", Color.WHITE));
-        grid.add(buildIndicatorTile("EMA 200", "2,670.30 (Strong Bull)", new Color(0x4A, 0xE1, 0x76)));
-        grid.add(buildIndicatorTile("Bollinger Bands", "Upper Expanding", Theme.ACCENT));
+        String[] names = {"RSI (14)", "MACD (12,26,9)", "EMA 20", "EMA 50", "EMA 200", "Bollinger Bands"};
+        for (int i = 0; i < 6; i++) {
+            indicatorVals[i] = new JLabel("loading...");
+            grid.add(buildIndicatorTile(names[i], indicatorVals[i]));
+        }
         right.add(grid);
         right.add(Box.createVerticalStrut(8));
 
@@ -918,11 +945,11 @@ public class StockDetailsPanel extends BasePanel {
         conLbl.setFont(Theme.MICRO);
         conLbl.setForeground(Theme.TXT_MUTED);
 
-        JLabel conVal = new JLabel("₹3,240.00 (+10.0%)");
+        JLabel conVal = analystVal;
         conVal.setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 9f));
         conVal.setForeground(new Color(0x4A, 0xE1, 0x76));
 
-        JLabel conCount = new JLabel("• 34 Wall St & Dalal St Analysts");
+        JLabel conCount = analystCount;
         conCount.setFont(Theme.MICRO);
         conCount.setForeground(Theme.TXT_SECONDARY);
 
@@ -935,7 +962,7 @@ public class StockDetailsPanel extends BasePanel {
         return sec;
     }
 
-    private JPanel buildIndicatorTile(String name, String signal, Color sigColor) {
+    private JPanel buildIndicatorTile(String name, JLabel lSig) {
         JPanel p = new JPanel(new BorderLayout());
         p.setOpaque(true);
         p.setBackground(new Color(0x14, 0x1B, 0x2B));
@@ -947,9 +974,8 @@ public class StockDetailsPanel extends BasePanel {
         lName.setFont(Theme.MICRO);
         lName.setForeground(Theme.TXT_MUTED);
 
-        JLabel lSig = new JLabel(signal);
         lSig.setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 8.5f));
-        lSig.setForeground(sigColor);
+        lSig.setForeground(Color.WHITE);
 
         p.add(lName, BorderLayout.WEST);
         p.add(lSig, BorderLayout.EAST);
@@ -970,22 +996,14 @@ public class StockDetailsPanel extends BasePanel {
         title.setFont(Theme.HEADING.deriveFont(Font.BOLD, 12.5f));
         title.setForeground(Color.WHITE);
 
-        JLabel sub = new JLabel("Energy & Conglomerate Sector");
-        sub.setFont(Theme.MICRO);
-        sub.setForeground(Theme.TXT_MUTED);
+        peersSubLbl.setFont(Theme.MICRO);
+        peersSubLbl.setForeground(Theme.TXT_MUTED);
 
         hdr.add(title, BorderLayout.WEST);
-        hdr.add(sub, BorderLayout.EAST);
+        hdr.add(peersSubLbl, BorderLayout.EAST);
         sec.add(hdr, BorderLayout.NORTH);
 
-        String[] cols = {"Company", "CMP", "1D %", "P/E", "Market Cap (Cr)", "Action"};
-        peersTableModel.setDataVector(new Object[][]{
-                {"RELIANCE (Active)", "2,945.50", "+2.37%", "24.80", "1,992,840", "Active"},
-                {"ONGC", "268.40", "+1.15%", "6.85", "337,650", "Switch"},
-                {"BPCL", "322.10", "-0.48%", "5.12", "139,720", "Switch"},
-                {"Adani Enterprises", "3,114.75", "+0.82%", "88.40", "355,081", "Switch"},
-                {"Tata Power", "435.60", "+2.94%", "34.20", "139,180", "Switch"}
-        }, cols);
+        peersTableModel.setColumnIdentifiers(new Object[]{"Company", "CMP", "1D %", "P/E", "Market Cap", "Action"});
 
         peersTable.setOpaque(false);
         peersTable.setBackground(new Color(0x14, 0x1B, 0x2B));
@@ -1003,7 +1021,7 @@ public class StockDetailsPanel extends BasePanel {
                 int col = peersTable.getSelectedColumn();
                 if (row >= 0 && col == 5) {
                     String comp = peersTableModel.getValueAt(row, 0).toString().split(" ")[0];
-                    if (!comp.equalsIgnoreCase("RELIANCE")) {
+                    if (currentAsset == null || !comp.equalsIgnoreCase(currentAsset.getSymbol())) {
                         setAssetBySymbol(comp);
                     }
                 }
@@ -1034,25 +1052,17 @@ public class StockDetailsPanel extends BasePanel {
         title.setFont(Theme.HEADING.deriveFont(Font.BOLD, 12.5f));
         title.setForeground(Color.WHITE);
 
-        JLabel sub = new JLabel("Live Feed Active");
-        sub.setFont(Theme.MICRO);
-        sub.setForeground(new Color(0x4A, 0xE1, 0x76));
+        newsSubLbl.setFont(Theme.MICRO);
+        newsSubLbl.setForeground(new Color(0x4A, 0xE1, 0x76));
 
         hdr.add(title, BorderLayout.WEST);
-        hdr.add(sub, BorderLayout.EAST);
+        hdr.add(newsSubLbl, BorderLayout.EAST);
         sec.add(hdr, BorderLayout.NORTH);
 
         newsContainer.setLayout(new BoxLayout(newsContainer, BoxLayout.Y_AXIS));
         newsContainer.setOpaque(false);
 
-        newsContainer.add(buildNewsItem("BULLISH", new Color(0x4A, 0xE1, 0x76), "Reuters", "18m ago",
-                "Reliance Retail completes acquisition of 100% equity stake in quick-commerce logistics network to expand pan-India delivery mesh."));
-        newsContainer.add(Box.createVerticalStrut(6));
-        newsContainer.add(buildNewsItem("RESEARCH", Theme.ACCENT, "Morgan Stanley", "1h ago",
-                "Overweight rating maintained: Target raised to ₹3,350 citing accelerated 5G subscriber monetisation and O2C margin expansion."));
-        newsContainer.add(Box.createVerticalStrut(6));
-        newsContainer.add(buildNewsItem("FILING", new Color(0xF5, 0x9E, 0x0B), "NSE Disclosures", "3h ago",
-                "Board of Directors approves issuance of non-convertible debentures on private placement basis up to ₹10,000 Cr."));
+        newsContainer.add(emptyNote("Loading the latest headlines..."));
 
         sec.add(newsContainer, BorderLayout.CENTER);
         return sec;
@@ -1107,9 +1117,9 @@ public class StockDetailsPanel extends BasePanel {
         breadcrumbSymbol.setText(asset.getSymbol());
 
         badgeExchange.setText((isIndian ? "NSE: " : "EXCH: ") + asset.getSymbol());
-        badgeIsin.setText("ISIN: " + (isIndian ? ("INE00" + Math.abs(asset.getSymbol().hashCode() % 90000 + 10000)) : "US" + Math.abs(asset.getSymbol().hashCode())));
-        badgeIndex.setText(isIndian ? "NIFTY 50 • Large Cap" : "Top Tier • Liquid");
-        badgeStatus.setText(isIndian ? "MARKET OPEN 09:15-15:30 IST" : "24/7 ACTIVE FEED");
+        badgeIsin.setText("YAHOO: " + YahooSymbols.of(asset));
+        badgeIndex.setText(asset.getType());
+        badgeStatus.setText(MarketHours.status(asset));
 
         // Title & Sector
         assetTitle.setText(asset.getName());
@@ -1122,56 +1132,346 @@ public class StockDetailsPanel extends BasePanel {
         double diff = asset.getPrice() - asset.getPreviousClose();
         heroDelta.setText(String.format(Locale.US, "%s%s%,.2f (%s%.2f%%)", sign, cur, diff, sign, chg));
         heroDelta.setForeground(chg >= 0 ? new Color(0x4A, 0xE1, 0x76) : new Color(0xFF, 0x54, 0x51));
-        heroTickTime.setText("Live Tick: " + LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")) + " IST");
-
-        // Range visualizers
-        double cmp = asset.getPrice();
-        double dayLow = cmp * 0.985;
-        double dayHigh = cmp * 1.018;
-        dayLowLbl.setText(String.format(Locale.US, "%s%,.2f", cur, dayLow));
-        dayHighLbl.setText(String.format(Locale.US, "%s%,.2f", cur, dayHigh));
-        double dayFrac = (cmp - dayLow) / (dayHigh - dayLow);
-        dayRangeCanvas.setFraction(dayFrac);
-        dayCmpSpanLbl.setText(String.format(Locale.US, "CMP: %s%,.2f (%.0f%% of Day Span)", cur, cmp, dayFrac * 100.0));
-
-        double wkLow = cmp * 0.75;
-        double wkHigh = cmp * 1.15;
-        week52LowLbl.setText(String.format(Locale.US, "%s%,.2f", cur, wkLow));
-        week52HighLbl.setText(String.format(Locale.US, "%s%,.2f", cur, wkHigh));
-        double wkFrac = (cmp - wkLow) / (wkHigh - wkLow);
-        week52RangeCanvas.setFraction(wkFrac);
-        week52CmpSpanLbl.setText(String.format(Locale.US, "%.1f%% of 52W Channel", wkFrac * 100.0));
-
-        // 8 Fundamental Cards
-        statPrevClose.setText(String.format(Locale.US, "%s%,.2f", cur, asset.getPreviousClose()));
-        statOpen.setText(String.format(Locale.US, "%s%,.2f", cur, asset.getPreviousClose() * 1.008));
-        statMcap.setText(isIndian ? "19.92 Lakh Cr" : "$2.84T");
-        statVol.setText("6.42M");
-        statPe.setText(String.format(Locale.US, "%.1f", 22.0 + (cmp % 10.0)));
-        statBook.setText(String.format(Locale.US, "%s%,.2f", cur, cmp * 0.40));
-        statEps.setText(String.format(Locale.US, "%.2f", cmp / 28.0));
-        statRoe.setText("11.8% / 9.6%");
+        heroTickTime.setText("Live Tick: " + java.time.ZonedDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss z")));
 
         // Pass to sub-components
         chartPanel.setAsset(asset);
         ticketPanel.setAsset(asset);
 
-        // Technical Consensus Rating
-        boolean bullish = chg >= 0;
-        double rating = bullish ? 0.82 : 0.32;
-        String verdict = bullish ? "STRONG BUY" : "SELL";
-        int buys = bullish ? 14 : 4;
-        int neutrals = 4;
-        int sells = bullish ? 2 : 12;
-        gaugePanel.setTechnicalRating(rating, verdict, buys, neutrals, sells);
+        if (marketData != null) {
+            applyDayNumbers(asset, cur);
+            applyTechnicals(asset, cur);
+            applyFundamentals(asset, cur, marketData.fundamentals(asset).orElse(null));
+            applyPeers(asset);
+            applyNews(marketData.news(asset));
+        }
 
         revalidate();
         repaint();
     }
 
+    /** Gives the page its real market numbers (day range, P/E, news...). */
+    public void setMarketData(MarketDataService marketData) {
+        this.marketData = marketData;
+        if (currentAsset != null) {
+            setAsset(currentAsset);
+        }
+    }
+
     /** Connects the candlestick chart to real market history. */
     public void setChartService(ChartService chartService) {
         chartPanel.setChartService(chartService);
+    }
+
+    // ------------------------------------------------------------------ real numbers
+
+    /** Day range, 52-week range, previous close, open and volume. */
+    private void applyDayNumbers(Asset asset, String cur) {
+        MarketSnapshot snap = marketData.snapshot(asset);
+        double cmp = asset.getPrice();
+
+        dayLowLbl.setText(MarketFormat.price(cur, snap.dayLow()));
+        dayHighLbl.setText(MarketFormat.price(cur, snap.dayHigh()));
+        double dayFrac = fraction(cmp, snap.dayLow(), snap.dayHigh());
+        dayRangeCanvas.setFraction(MarketFormat.known(dayFrac) ? dayFrac : 0);
+        dayCmpSpanLbl.setText(MarketFormat.known(dayFrac)
+                ? String.format(Locale.US, "CMP: %s%,.2f (%.0f%% of Day Span)", cur, cmp, dayFrac * 100.0)
+                : "Day range loading...");
+
+        week52LowLbl.setText(MarketFormat.price(cur, snap.week52Low()));
+        week52HighLbl.setText(MarketFormat.price(cur, snap.week52High()));
+        double wkFrac = fraction(cmp, snap.week52Low(), snap.week52High());
+        week52RangeCanvas.setFraction(MarketFormat.known(wkFrac) ? wkFrac : 0);
+        week52CmpSpanLbl.setText(MarketFormat.known(wkFrac)
+                ? String.format(Locale.US, "%.1f%% of 52W Channel", wkFrac * 100.0) : "52-week range loading...");
+
+        statPrevClose.setText(MarketFormat.price(cur, asset.getPreviousClose()));
+        statSubs[0].setText(String.format(Locale.US, "Change since: %+,.2f", cmp - asset.getPreviousClose()));
+        statOpen.setText(MarketFormat.price(cur, snap.open()));
+        statSubs[1].setText(MarketFormat.known(snap.open()) && asset.getPreviousClose() > 0
+                ? String.format(Locale.US, "%+.2f%% gap at open", (snap.open() / asset.getPreviousClose() - 1) * 100)
+                : "Source: " + snap.source());
+        statVol.setText(MarketFormat.volume(snap.volume()));
+        double avgVol = marketData.averageVolume(asset, 20);
+        statSubs[3].setText(MarketFormat.known(avgVol) && avgVol > 0 && MarketFormat.known(snap.volume())
+                ? String.format(Locale.US, "%.2fx 20-day avg", snap.volume() / avgVol) : "20-day avg: N/A");
+    }
+
+    private static double fraction(double value, double low, double high) {
+        if (!MarketFormat.known(low) || !MarketFormat.known(high) || high <= low) {
+            return Double.NaN;
+        }
+        return Math.max(0, Math.min(1, (value - low) / (high - low)));
+    }
+
+    /** Gauge and indicator tiles, calculated from one year of daily candles. */
+    private void applyTechnicals(Asset asset, String cur) {
+        TechnicalAnalysis.Report t = marketData.technicals(asset);
+        if (t == null) {
+            return;   // candles still loading
+        }
+        gaugePanel.setTechnicalRating(t.score(), t.verdict(), t.buys(), t.neutrals(), t.sells());
+        double last = asset.getPrice();
+
+        String rsiWord = !MarketFormat.known(t.rsi()) ? "" : t.rsi() > 70 ? " (Overbought)" : t.rsi() < 30 ? " (Oversold)"
+                : t.rsi() >= 50 ? " (Bullish)" : " (Bearish)";
+        setIndicator(0, MarketFormat.number(t.rsi(), 2) + rsiWord, t.rsi() >= 50 ? Theme.GAIN : Theme.LOSS);
+        boolean macdUp = t.macd() > t.macdSignal();
+        setIndicator(1, MarketFormat.known(t.macd())
+                ? String.format(Locale.US, "%+.2f (%s signal)", t.macd(), macdUp ? "above" : "below") : MarketFormat.NA,
+                macdUp ? Theme.GAIN : Theme.LOSS);
+        setIndicator(2, emaText(cur, t.ema20(), last), last > t.ema20() ? Theme.GAIN : Theme.LOSS);
+        setIndicator(3, emaText(cur, t.ema50(), last), last > t.ema50() ? Theme.GAIN : Theme.LOSS);
+        setIndicator(4, emaText(cur, t.ema200(), last), last > t.ema200() ? Theme.GAIN : Theme.LOSS);
+        String band = !MarketFormat.known(t.bollingerUpper()) ? MarketFormat.NA
+                : last > t.bollingerUpper() ? "Above upper band"
+                : last < t.bollingerLower() ? "Below lower band"
+                : String.format(Locale.US, "%,.0f - %,.0f", t.bollingerLower(), t.bollingerUpper());
+        setIndicator(5, band, Theme.ACCENT);
+    }
+
+    private void setIndicator(int i, String text, Color color) {
+        indicatorVals[i].setText(text);
+        indicatorVals[i].setForeground(text.equals(MarketFormat.NA) ? Theme.TXT_MUTED : color);
+    }
+
+    private static String emaText(String cur, double ema, double last) {
+        return MarketFormat.known(ema)
+                ? String.format(Locale.US, "%s%,.2f (%s)", cur, ema, last > ema ? "Above" : "Below") : MarketFormat.NA;
+    }
+
+    /** Company facts from Yahoo Finance; every missing number shows "N/A". */
+    private void applyFundamentals(Asset asset, String cur, Fundamentals f) {
+        double cmp = asset.getPrice();
+        boolean indian = "₹".equals(cur);
+        unitLbl.setText(indian ? "Figures in ₹ Crore (Yahoo Finance)" : "Figures in $ Million (Yahoo Finance)");
+
+        if (f == null) {
+            String why = marketData.isOnline() ? "Loading..." : "Offline: company data needs internet";
+            statMcap.setText(MarketFormat.NA);
+            statPe.setText(MarketFormat.NA);
+            statBook.setText(MarketFormat.NA);
+            statEps.setText(MarketFormat.NA);
+            statRoe.setText(MarketFormat.NA);
+            for (int i : new int[]{2, 4, 5, 6, 7}) {
+                statSubs[i].setText(why);
+            }
+            if (shownFundamentals != null || overviewChips.getComponentCount() == 0) {
+                shownFundamentals = null;
+                overviewDesc.setText(descriptionHtml(why));
+                overviewChips.removeAll();
+                overviewChips.add(chip(asset.getType()));
+                overviewBars.removeAll();
+                financialsModel.setDataVector(new Object[][]{{why, ""}}, new Object[]{"Metric", ""});
+                for (int i = 0; i < 6; i++) {
+                    solvencyVals[i].setText(MarketFormat.NA);
+                    solvencySubs[i].setText(" ");
+                }
+                for (JLabel l : shareVals) {
+                    l.setText(MarketFormat.NA);
+                }
+                analystVal.setText(MarketFormat.NA);
+                analystCount.setText("");
+            }
+            return;
+        }
+
+        // cards that depend on the live price are updated every second
+        statMcap.setText(MarketFormat.big(cur, f.marketCap()));
+        statSubs[2].setText(f.sector().isEmpty() ? asset.getType() : f.sector());
+        statPe.setText(MarketFormat.number(f.peRatio(), 1));
+        statSubs[4].setText(MarketFormat.known(f.eps()) && f.eps() > 0
+                ? String.format(Locale.US, "Price %s%,.0f / EPS %,.2f", cur, cmp, f.eps()) : "Trailing 12 months");
+        statBook.setText(MarketFormat.price(cur, f.bookValue()));
+        statSubs[5].setText(MarketFormat.known(f.bookValue()) && f.bookValue() > 0
+                ? String.format(Locale.US, "P/B %.2fx", cmp / f.bookValue()) : "P/B: N/A");
+        statEps.setText(MarketFormat.number(f.eps(), 2));
+        statSubs[6].setText("Earnings per share");
+        statRoe.setText(MarketFormat.pct(f.returnOnEquity()) + " / " + MarketFormat.pct(f.returnOnAssets()));
+        statSubs[7].setText("Return on equity / assets");
+        if (MarketFormat.known(f.targetMedianPrice()) && f.targetMedianPrice() > 0) {
+            analystVal.setText(String.format(Locale.US, "%s%,.2f (%+.1f%%)", cur, f.targetMedianPrice(),
+                    (f.targetMedianPrice() / cmp - 1) * 100));
+            analystVal.setForeground(f.targetMedianPrice() >= cmp ? Theme.GAIN : Theme.LOSS);
+            analystCount.setText("• " + f.analystCount() + " analysts"
+                    + (f.recommendation().isEmpty() ? "" : " • consensus: " + f.recommendation().toUpperCase()));
+        } else {
+            analystVal.setText(MarketFormat.NA);
+            analystCount.setText("• no analyst coverage reported");
+        }
+
+        if (f == shownFundamentals) {
+            return;   // the tabs below only change when new data arrives
+        }
+        shownFundamentals = f;
+
+        overviewDesc.setText(descriptionHtml(f.description().isEmpty() ? "No company description available." : f.description()));
+        overviewChips.removeAll();
+        if (!f.ceo().isEmpty()) overviewChips.add(chip("Leader: " + f.ceo()));
+        if (!f.industry().isEmpty()) overviewChips.add(chip("Industry: " + f.industry()));
+        if (!f.city().isEmpty()) overviewChips.add(chip("HQ: " + f.city() + (f.country().isEmpty() ? "" : ", " + f.country())));
+        if (f.employees() > 0) overviewChips.add(chip(String.format(Locale.US, "Employees: %,d", f.employees())));
+
+        double grossMargin = Double.NaN;
+        if (!f.years().isEmpty() && f.years().get(0).revenue() > 0) {
+            grossMargin = f.years().get(0).grossProfit() / f.years().get(0).revenue();
+        }
+        overviewBars.removeAll();
+        overviewBars.add(buildSegmentBar("Net Profit Margin", percentOrMinus(f.profitMargin()), new Color(0x4D, 0x8E, 0xFF)));
+        overviewBars.add(buildSegmentBar("Return on Equity", percentOrMinus(f.returnOnEquity()), new Color(0x4A, 0xE1, 0x76)));
+        overviewBars.add(buildSegmentBar("Return on Assets", percentOrMinus(f.returnOnAssets()), new Color(0x06, 0xB6, 0xD4)));
+        overviewBars.add(buildSegmentBar("Gross Margin (latest FY)", percentOrMinus(grossMargin), new Color(0xF5, 0x9E, 0x0B)));
+
+        fillFinancials(f, indian);
+
+        solvencyVals[0].setText(MarketFormat.big(cur, f.enterpriseValue()));
+        solvencySubs[0].setText("Market value + net debt");
+        solvencyVals[1].setText(MarketFormat.number(f.debtToEquity(), 2));
+        solvencySubs[1].setText(!MarketFormat.known(f.debtToEquity()) ? " " : f.debtToEquity() < 0.5 ? "Low leverage"
+                : f.debtToEquity() < 1.5 ? "Moderate leverage" : "High leverage");
+        double cover = f.interestCoverage();
+        solvencyVals[2].setText(MarketFormat.known(cover) ? String.format(Locale.US, "%.2fx", cover) : MarketFormat.NA);
+        solvencySubs[2].setText("EBIT / interest paid");
+        solvencyVals[3].setText(MarketFormat.known(f.evToEbitda()) ? String.format(Locale.US, "%.1fx", f.evToEbitda()) : MarketFormat.NA);
+        solvencySubs[3].setText("Years of EBITDA to buy the firm");
+        solvencyVals[4].setText(MarketFormat.big(cur, f.freeCashFlow()));
+        solvencySubs[4].setText("Cash left after capex");
+        solvencyVals[5].setText(MarketFormat.pct(f.profitMargin()));
+        solvencySubs[5].setText("Profit per 100 of revenue");
+
+        shareTitle.setText("MAJOR HOLDERS (Yahoo Finance)");
+        shareVals[0].setText(MarketFormat.pct(f.insidersPercent()));
+        shareVals[1].setText(MarketFormat.pct(f.institutionsPercent()));
+        shareVals[2].setText(f.institutionsCount() > 0 ? String.format(Locale.US, "%,d", f.institutionsCount()) : MarketFormat.NA);
+        double pub = 1 - (MarketFormat.known(f.insidersPercent()) ? f.insidersPercent() : 0)
+                - (MarketFormat.known(f.institutionsPercent()) ? f.institutionsPercent() : 0);
+        shareVals[3].setText(MarketFormat.known(f.insidersPercent()) || MarketFormat.known(f.institutionsPercent())
+                ? MarketFormat.pct(Math.max(0, pub)) : MarketFormat.NA);
+
+        revalidate();
+    }
+
+    private static int percentOrMinus(double fraction) {
+        return MarketFormat.known(fraction) ? (int) Math.round(fraction * 100) : -1;
+    }
+
+    /** Income statement table: one column per financial year (newest first), in crore or million. */
+    private void fillFinancials(Fundamentals f, boolean indian) {
+        if (f.years().isEmpty()) {
+            financialsModel.setDataVector(new Object[][]{{"Yahoo reports no yearly statements", ""}}, new Object[]{"Metric", ""});
+            return;
+        }
+        double unit = indian ? 1e7 : 1e6;
+        List<FinancialYear> years = f.years();
+        Object[] header = new Object[years.size() + 1];
+        header[0] = indian ? "Metric (₹ Cr)" : "Metric ($ M)";
+        for (int i = 0; i < years.size(); i++) {
+            header[i + 1] = years.get(i).year();
+        }
+        String[] names = {"Revenue", "Cost of Revenue", "Gross Profit", "Operating Income", "EBIT",
+                "Interest Expense", "Net Income", "Net Margin %"};
+        Object[][] rows = new Object[names.length][years.size() + 1];
+        for (int r = 0; r < names.length; r++) {
+            rows[r][0] = names[r];
+            for (int c = 0; c < years.size(); c++) {
+                FinancialYear y = years.get(c);
+                double v = switch (r) {
+                    case 0 -> y.revenue();
+                    case 1 -> y.costOfRevenue();
+                    case 2 -> y.grossProfit();
+                    case 3 -> y.operatingIncome();
+                    case 4 -> y.ebit();
+                    case 5 -> y.interestExpense();
+                    case 6 -> y.netIncome();
+                    default -> y.revenue() > 0 ? y.netIncome() / y.revenue() : Double.NaN;
+                };
+                rows[r][c + 1] = r == 7 ? MarketFormat.pct(v) : MarketFormat.number(v / unit, 0);
+            }
+        }
+        financialsModel.setDataVector(rows, header);
+    }
+
+    /** Other assets of the same sector (or type) from the app's list, with live price and change. */
+    private void applyPeers(Asset asset) {
+        String group = groupOf(asset);
+        List<Asset> peers = new ArrayList<>();
+        peers.add(asset);
+        for (Asset a : marketService.getAllAssets()) {
+            if (a != asset && groupOf(a).equalsIgnoreCase(group) && a.getClass() == asset.getClass()) {
+                peers.add(a);
+            }
+        }
+        if (peers.size() < 3) {   // too few in the same sector: fill up with the same asset type
+            for (Asset a : marketService.getAllAssets()) {
+                if (!peers.contains(a) && a.getType().equals(asset.getType()) && peers.size() < 5) {
+                    peers.add(a);
+                }
+            }
+        }
+        peersSubLbl.setText(group + " • from the app's market list");
+        Object[][] rows = new Object[Math.min(5, peers.size())][];
+        for (int i = 0; i < rows.length; i++) {
+            Asset a = peers.get(i);
+            String c = MarketFormat.currency(a.getSymbol());
+            Fundamentals pf = marketData.fundamentals(a).orElse(null);
+            rows[i] = new Object[]{a.getSymbol() + (a == asset ? " (Active)" : ""),
+                    String.format(Locale.US, "%s%,.2f", c, a.getPrice()),
+                    String.format(Locale.US, "%+.2f%%", a.getChangePercent()),
+                    pf == null ? MarketFormat.NA : MarketFormat.number(pf.peRatio(), 2),
+                    pf == null ? MarketFormat.NA : MarketFormat.big(c, pf.marketCap()),
+                    a == asset ? "Active" : "Switch"};
+        }
+        String key = asset.getSymbol() + rows.length;
+        if (!key.equals(shownPeersFor) || peersTableModel.getRowCount() != rows.length) {
+            shownPeersFor = key;
+            peersTableModel.setRowCount(0);
+            for (Object[] row : rows) {
+                peersTableModel.addRow(row);
+            }
+        } else {
+            for (int i = 0; i < rows.length; i++) {
+                for (int c = 1; c < 5; c++) {
+                    peersTableModel.setValueAt(rows[i][c], i, c);
+                }
+            }
+        }
+    }
+
+    private static String groupOf(Asset a) {
+        return a instanceof com.papertrader.model.Stock st ? st.getSector() : a.getType();
+    }
+
+    /** Latest headlines from Yahoo Finance; rebuilt only when the list changes. */
+    private void applyNews(List<NewsItem> news) {
+        if (news == shownNews && newsContainer.getComponentCount() > 0) {
+            return;
+        }
+        shownNews = news;
+        newsContainer.removeAll();
+        if (news.isEmpty()) {
+            newsSubLbl.setText(marketData.isOnline() ? "Loading..." : "Offline");
+            newsContainer.add(emptyNote(marketData.isOnline()
+                    ? "Loading the latest headlines..." : "News needs an internet connection."));
+        } else {
+            newsSubLbl.setText("Yahoo Finance • " + news.size() + " headlines");
+            for (int i = 0; i < Math.min(3, news.size()); i++) {
+                NewsItem n = news.get(i);
+                if (i > 0) {
+                    newsContainer.add(Box.createVerticalStrut(6));
+                }
+                newsContainer.add(buildNewsItem("NEWS", Theme.ACCENT, n.publisher(), MarketFormat.timeAgo(n.timeMillis()),
+                        n.title().replace("<", "&lt;")));
+            }
+        }
+        newsContainer.revalidate();
+        newsContainer.repaint();
+    }
+
+    private JLabel emptyNote(String text) {
+        JLabel l = new JLabel(text);
+        l.setFont(Theme.MICRO);
+        l.setForeground(Theme.TXT_MUTED);
+        return l;
     }
 
     @Override
