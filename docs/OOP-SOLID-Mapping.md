@@ -72,6 +72,8 @@ Every concept below points to the exact file to open during the viva.
 | `HistoryProvider` | `BinanceQuoteProvider`, `YahooQuoteProvider`, `SimulatedHistoryProvider` | candles for charts/backtests. Binance and Yahoo implement **two interfaces** (`QuoteProvider` + `HistoryProvider`); Finnhub implements only one (ISP) |
 | `EquityRepository` | `InMemoryEquityRepository`, `FileEquityRepository` | equity curve storage |
 | `Refreshable` | `BasePanel` | every page can refresh itself |
+| `SnapshotProvider` | `YahooQuoteProvider`, `BinanceQuoteProvider` | day / 52-week stats for any asset |
+| `FundamentalsProvider` | `YahooFundamentalsProvider` | company data and news, swappable for another source |
 
 ## 3. SOLID principles
 | Principle | Where it shows |

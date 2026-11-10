@@ -33,6 +33,9 @@ and low coupling, an SRS using **FODA**, 4 UML diagrams, and the **Spiral** SDLC
 | Backtesting | Replay a year of **real daily candles** at **1x / 2x / 5x** or instantly. Strategies: SMA crossover, RSI, Buy & Hold, or your own price rule. Buy/sell arrows on the chart, equity curve, and comparison to buy & hold. |
 | Risk analytics | **Sharpe, Sortino, max drawdown, win rate, profit factor**, total return and an equity curve, both for your account and for every backtest. |
 | Auto-trading | Start **bots** that follow a strategy or a custom IF/THEN price rule and place real paper orders, with a live activity log. |
+| Market overview | Real index levels (NIFTY 50, SENSEX, BANK NIFTY, NIFTY IT, S&P 500, NASDAQ 100, DOW, RUSSELL 2000), India VIX / VIX, total crypto market cap, market breadth, turnover, sector heatmap and "most active / volume surge / near 52-week high" cards, all calculated from live data. |
+| Stock details | Real day and 52-week ranges, volume, VWAP, market cap, P/E, EPS, dividend yield, beta, yearly revenue/profit, margins, debt/equity, major holders, analyst target, a technical rating from 13 indicators, peers and latest news. Missing values show **N/A**, never made-up numbers. |
+| Trade history analytics | Win rate, profit factor, streaks, average holding time (FIFO), best/worst asset, daily P&L bars, monthly P&L calendar, short/long-term capital gains and a tax estimate, all from your own trades. |
 | Multi-user | Register / log in, **leaderboard** ranking all traders by net worth, **reset account** to start over. |
 | 3D | Rotatable JavaFX 3D portfolio chart, spinning 3D coin on the login screen. |
 
@@ -42,7 +45,7 @@ Requirements: **Java 17+** and **Maven** (IntelliJ IDEA / Eclipse / VS Code can 
 
 ```bash
 mvn compile exec:java          # start the app
-mvn test                       # run the 58 unit tests
+mvn test                       # run the 68 unit tests
 mvn package                    # build target/paper-trading-simulator-1.0.0.jar
 java -jar target/paper-trading-simulator-1.0.0.jar
 ```
@@ -55,7 +58,10 @@ Log in with **demo / demo** (created on first run with some sample holdings), or
 |---|---|---|---|
 | Crypto (BTC, ETH, SOL) | **Binance**: the exchange's own last traded price (USDT ≈ USD) | No | every 3 s |
 | Stocks & ETFs (AAPL, MSFT, GOOGL, TSLA, AMZN, SPY, QQQ) | **Finnhub**: official real-time US exchange quotes | Free key | every 15 s |
-| Stocks & ETFs (when no Finnhub key) | **Yahoo Finance** | No | every 15 s |
+| Stocks & ETFs (when no Finnhub key), Indian stocks (`.NS`) | **Yahoo Finance** | No | every 15 s |
+| Day/52-week stats, indices, VIX, USD/INR | **Yahoo Finance** chart API | No | every 60 s |
+| Fundamentals, holders, analyst target, news | **Yahoo Finance** quoteSummary + search | No | every 30 min / 10 min |
+| Total crypto market cap | **CoinGecko** `/global` | No | every 5 min |
 
 It works without any setup (Binance + Yahoo). For the most accurate stock prices, add a free Finnhub key:
 
@@ -97,24 +103,26 @@ src/main/java/com/papertrader/
 │                            OrderBookSimulator
 ├── strategy/                TradingStrategy ← SmaCrossover, Rsi, BuyAndHold, PriceRule; Indicators
 ├── backtest/                BacktestEngine (step-by-step historical replay)
-├── analytics/               PerformanceAnalyzer (Sharpe, Sortino, drawdown, win rate, profit factor)
+├── analytics/               PerformanceAnalyzer (Sharpe, Sortino, drawdown, win rate, profit factor),
+│                            TradeStats (FIFO holding time, streaks, capital gains from real trades)
 ├── bot/                     TradingBot, BotService (auto-trading)
 │                            User, Account, Portfolio, Holding, Transaction, enums
 ├── interfaces/              PriceFeed, PriceListener, QuoteProvider, HistoryProvider, FeeCalculator, EquityRepository,
 │                            Repository<T,ID>, TransactionRepository, Exportable
 ├── feed/                    LivePriceFeed (real prices) + Binance/Finnhub/Yahoo QuoteProviders,
+│                            YahooFundamentalsProvider, CoinGeckoGlobalProvider, Http, YahooSymbols,
 │                            SimulatedPriceFeed (offline random-walk prices)
 ├── fees/                    PercentageFeeCalculator, FlatFeeCalculator
 ├── repository/              InMemory… and File… repositories (CSV in data/)
 ├── service/                 AuthService, MarketService, TradingService, PortfolioService, ChartService,
-│                            AnalyticsService, LeaderboardService, AppContext
+│                            AnalyticsService, LeaderboardService, MarketDataService (cached real stats), AppContext
 ├── exception/               SimulatorException ← InsufficientFunds, InvalidOrder, Auth
-├── util/                    Formatter, PasswordHasher, CsvExporter, AppConfig
+├── util/                    Formatter, PasswordHasher, CsvExporter, AppConfig, MarketHours, MarketFormat
 └── ui/                      MainFrame, LoginPanel, BasePanel ← Dashboard/Market/Trade/
     ├── components/          Portfolio/History/Analytics/Backtest/AutoTrade/Leaderboard panels;
     │                        StatCard, LineChartPanel, CandleChartPanel, OrderBookPanel, StrategyPicker, TickerPanel, renderers
     └── three/               Base3DView ← Coin3DView, Portfolio3DView (JavaFX 3D)
-src/test/java/com/papertrader/   58 JUnit tests
+src/test/java/com/papertrader/   68 JUnit tests
 docs/
 ├── SRS.md                   Software Requirements Specification (FODA)
 ├── SpiralModel.md           SDLC: 4 spiral loops
