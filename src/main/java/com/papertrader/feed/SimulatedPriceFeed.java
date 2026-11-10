@@ -56,6 +56,16 @@ public class SimulatedPriceFeed implements PriceFeed {
         timer.stop();
     }
 
+    @Override
+    public String getStatusText() {
+        return "Simulated prices (offline mode)";
+    }
+
+    /** True if this feed has at least one asset to move. */
+    public boolean hasAssets() {
+        return !assets.isEmpty();
+    }
+
     /** One step of the simulation: move every price and tell all listeners. */
     public void tick() {
         for (Asset asset : assets) {

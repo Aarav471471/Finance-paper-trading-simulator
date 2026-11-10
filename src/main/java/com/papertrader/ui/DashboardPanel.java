@@ -41,7 +41,7 @@ public class DashboardPanel extends BasePanel {
 
     public DashboardPanel(AuthService authService, MarketService marketService, PortfolioService portfolioService,
                           TradingService tradingService, double startingCash) {
-        super("Dashboard", "Your account at a glance. Prices update every second.");
+        super("Dashboard", "Your account at a glance, valued at live market prices.");
         this.authService = authService;
         this.portfolioService = portfolioService;
         this.tradingService = tradingService;

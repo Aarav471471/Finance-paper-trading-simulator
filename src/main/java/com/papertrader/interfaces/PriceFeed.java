@@ -2,8 +2,8 @@ package com.papertrader.interfaces;
 
 /**
  * ABSTRACTION of "a source of live prices".
- * Today the app uses SimulatedPriceFeed (random prices). A real stock API feed could be
- * written later by implementing this same interface, and nothing else would need to change.
+ * Two implementations: LivePriceFeed (real prices from APIs) and SimulatedPriceFeed
+ * (random prices, works offline). App.java picks one; nothing else in the app knows which.
  */
 public interface PriceFeed {
     void addListener(PriceListener listener);
@@ -13,4 +13,7 @@ public interface PriceFeed {
     void start();
 
     void stop();
+
+    /** One line for the UI saying where prices come from, e.g. "Binance: live 16:30:05". */
+    String getStatusText();
 }

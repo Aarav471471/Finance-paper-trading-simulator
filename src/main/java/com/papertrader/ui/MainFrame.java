@@ -1,5 +1,6 @@
 package com.papertrader.ui;
 
+import com.papertrader.interfaces.PriceFeed;
 import com.papertrader.service.AuthService;
 import com.papertrader.service.MarketService;
 import com.papertrader.service.PortfolioService;
@@ -42,12 +43,15 @@ public class MainFrame extends JFrame {
     private final Map<String, BasePanel> pages = new LinkedHashMap<>();
     private final Map<String, JToggleButton> navButtons = new LinkedHashMap<>();
     private final JLabel userLabel = new JLabel();
+    private final JLabel dataSourceLabel = new JLabel();
+    private final PriceFeed priceFeed;
     private BasePanel currentPage;
 
     public MainFrame(AuthService authService, MarketService marketService, TradingService tradingService,
-                     PortfolioService portfolioService, double startingCash) {
+                     PortfolioService portfolioService, PriceFeed priceFeed, double startingCash) {
         super("PaperTrader 3D - Finance Paper Trading Simulator");
         this.authService = authService;
+        this.priceFeed = priceFeed;
 
         // Every page is stored as a BasePanel (the parent type). See refreshCurrentPage().
         pages.put("Dashboard", new DashboardPanel(authService, marketService, portfolioService, tradingService, startingCash));
@@ -101,6 +105,17 @@ public class MainFrame extends JFrame {
         }
 
         sidebar.add(Box.createVerticalGlue());
+        JLabel dataTitle = new JLabel("MARKET DATA");
+        dataTitle.setFont(Theme.SMALL);
+        dataTitle.setForeground(Theme.MUTED);
+        dataTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sidebar.add(dataTitle);
+        sidebar.add(Box.createVerticalStrut(4));
+        dataSourceLabel.setFont(Theme.SMALL);
+        dataSourceLabel.setForeground(Theme.TEXT);
+        dataSourceLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        sidebar.add(dataSourceLabel);
+        sidebar.add(Box.createVerticalStrut(18));
         userLabel.setForeground(Theme.MUTED);
         userLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         sidebar.add(userLabel);
@@ -131,6 +146,8 @@ public class MainFrame extends JFrame {
     }
 
     private void refreshCurrentPage() {
+        // one line per source, e.g. "Binance: live 16:30:05"
+        dataSourceLabel.setText("<html><body style='width:165px'>" + priceFeed.getStatusText().replace("  |  ", "<br>") + "</html>");
         if (authService.isLoggedIn() && currentPage != null) {
             currentPage.refresh();   // RUNTIME POLYMORPHISM: the real page's refresh() runs
         }
