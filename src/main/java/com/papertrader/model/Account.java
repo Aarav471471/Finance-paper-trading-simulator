@@ -29,6 +29,14 @@ public class Account {
         balance += amount;
     }
 
+    /** Used by "Reset account": start again with fresh virtual cash. */
+    public void resetTo(double startingBalance) {
+        if (startingBalance < 0) {
+            throw new IllegalArgumentException("Balance cannot be negative");
+        }
+        balance = startingBalance;
+    }
+
     public void withdraw(double amount) throws InsufficientFundsException {
         if (amount <= 0) {
             throw new IllegalArgumentException("Withdrawal must be positive");

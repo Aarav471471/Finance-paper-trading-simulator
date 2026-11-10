@@ -9,4 +9,7 @@ public interface TransactionRepository extends Repository<Transaction, Integer> 
     List<Transaction> findByUsername(String username);
 
     int nextId();
+
+    /** Used by "Reset account". */
+    void deleteByUsername(String username);
 }

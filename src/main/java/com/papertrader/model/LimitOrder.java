@@ -31,6 +31,15 @@ public class LimitOrder extends Order {
         return marketPrice >= limitPrice;
     }
 
+    /** A limit order guarantees the price: never pay more (BUY) or receive less (SELL) than the limit. */
+    @Override
+    public double adjustFillPrice(double fillPrice) {
+        if (getSide() == OrderSide.BUY) {
+            return Math.min(fillPrice, limitPrice);
+        }
+        return Math.max(fillPrice, limitPrice);
+    }
+
     @Override
     public String getOrderType() {
         return "Limit";

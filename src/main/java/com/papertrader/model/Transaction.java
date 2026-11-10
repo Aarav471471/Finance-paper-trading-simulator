@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 /** A record of one completed trade. All fields are final, so a transaction can never be changed. */
 public class Transaction implements Exportable {
 
-    public static final String CSV_HEADER = "id,username,timestamp,symbol,side,orderType,quantity,price,fee";
+    public static final String CSV_HEADER = "id,username,timestamp,symbol,side,orderType,quantity,price,fee,realizedPnl";
 
     private final int id;
     private final String username;
@@ -18,9 +18,17 @@ public class Transaction implements Exportable {
     private final int quantity;
     private final double price;
     private final double fee;
+    private final double realizedPnl;   // profit/loss locked in by a SELL (0 for a BUY)
 
+    /** Constructor for a BUY (nothing is realised when you buy). */
     public Transaction(int id, String username, LocalDateTime timestamp, String symbol, OrderSide side,
                        String orderType, int quantity, double price, double fee) {
+        this(id, username, timestamp, symbol, side, orderType, quantity, price, fee, 0);
+    }
+
+    /** Full constructor (OVERLOADED): a SELL also records the realised profit or loss. */
+    public Transaction(int id, String username, LocalDateTime timestamp, String symbol, OrderSide side,
+                       String orderType, int quantity, double price, double fee, double realizedPnl) {
         this.id = id;
         this.username = username;
         this.timestamp = timestamp;
@@ -30,6 +38,7 @@ public class Transaction implements Exportable {
         this.quantity = quantity;
         this.price = price;
         this.fee = fee;
+        this.realizedPnl = realizedPnl;
     }
 
     /** Money that left (BUY) or entered (SELL) the account, including the fee. */
@@ -74,9 +83,13 @@ public class Transaction implements Exportable {
         return fee;
     }
 
+    public double getRealizedPnl() {
+        return realizedPnl;
+    }
+
     @Override
     public String toCsvRow() {
         return id + "," + username + "," + timestamp + "," + symbol + "," + side + "," + orderType + ","
-                + quantity + "," + price + "," + fee;
+                + quantity + "," + price + "," + fee + "," + realizedPnl;
     }
 }

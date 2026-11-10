@@ -25,6 +25,11 @@ public class Stock extends Asset {
     }
 
     @Override
+    public double getSpreadPercent() {
+        return 0.02;
+    }
+
+    @Override
     public double getVolatility() {
         return 0.004;   // about 0.4% per tick
     }

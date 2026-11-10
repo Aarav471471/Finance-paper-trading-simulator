@@ -25,6 +25,11 @@ public class Crypto extends Asset {
     }
 
     @Override
+    public double getSpreadPercent() {
+        return 0.05;
+    }
+
+    @Override
     public double getVolatility() {
         return 0.012;   // about 1.2% per tick
     }
