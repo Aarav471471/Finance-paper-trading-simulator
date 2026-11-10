@@ -123,12 +123,12 @@ public class TradePanel extends BasePanel {
     private final JLabel assetSymbolLbl = new JLabel("RELIANCE");
     private final JLabel assetExchangeLbl = new JLabel("NSE");
     private final JLabel assetNameLbl = new JLabel("Reliance Industries Ltd.");
-    private final JLabel assetCmpLbl = new JLabel("₹2,945.50");
-    private final JLabel assetDeltaLbl = new JLabel("+₹68.25 (+2.37%)");
-    private final JLabel assetHighLbl = new JLabel("₹2,960.00");
-    private final JLabel assetLowLbl = new JLabel("₹2,890.00");
-    private final JLabel assetVolLbl = new JLabel("6.42M");
-    private final JLabel assetVwapLbl = new JLabel("₹2,932.15");
+    private final JLabel assetCmpLbl = new JLabel("N/A");
+    private final JLabel assetDeltaLbl = new JLabel("-");
+    private final JLabel assetHighLbl = new JLabel("N/A");
+    private final JLabel assetLowLbl = new JLabel("N/A");
+    private final JLabel assetVolLbl = new JLabel("N/A");
+    private final JLabel assetVwapLbl = new JLabel("N/A");
     private final JLabel assetSessionLbl = new JLabel("LIVE · 09:15-15:30 IST");
 
     // Quick Asset Buttons Container
@@ -1612,7 +1612,7 @@ public class TradePanel extends BasePanel {
     // -------------------------------------------------------------------------
     private static class Level2DepthPanel extends JPanel {
         private final JLabel ratioLbl = new JLabel("Bids: 58.4% (32,450)  vs  Asks: 41.6% (23,120)");
-        private final JLabel spreadLbl = new JLabel("Spread: ₹0.30 (0.01%)");
+        private final JLabel spreadLbl = new JLabel("Spread: -");
         private double bidRatio = 0.584;
 
         private final DepthLadderTable bidsTable = new DepthLadderTable(true);
