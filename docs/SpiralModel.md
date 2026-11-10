@@ -1,7 +1,7 @@
 # SDLC: Spiral Model
 
 We built PaperTrader 3D with the **Spiral model** (Boehm, 1988). The project went around the
-spiral five times. Each loop has the same four quadrants:
+spiral six times. Each loop has the same four quadrants:
 
 1. **Determine objectives** (planning): what this loop must deliver
 2. **Identify and resolve risks** (risk analysis): what could go wrong, and a prototype or test to reduce it
@@ -14,13 +14,14 @@ calculations) could be tried early in small prototypes before the full app was b
 ```
                      Planning  |  Risk analysis
                                |
-          Loop 5 -----------------------------------------.
-          Loop 4 ----------------------------------.      |
-          Loop 3 ---------------------------.      |      |
-          Loop 2 --------------------.      |      |      |
-          Loop 1 -------------.      |      |      |      |
-                              *      |      |      |      |
-                     ---------+------+------+------+------+-->  cost / time
+          Loop 6 ------------------------------------------------.
+          Loop 5 -----------------------------------------.      |
+          Loop 4 ----------------------------------.      |      |
+          Loop 3 ---------------------------.      |      |      |
+          Loop 2 --------------------.      |      |      |      |
+          Loop 1 -------------.      |      |      |      |      |
+                              *      |      |      |      |      |
+                     ---------+------+------+------+------+------+-->  cost / time
                               |
                     Evaluation | Engineering
 ```
@@ -75,4 +76,14 @@ calculations) could be tried early in small prototypes before the full app was b
 | Risks | *Inaccurate or delayed data.* *API keys leaking into Git.* *Rate limits (HTTP 429).* *Slow or no internet freezing the UI.* *An API changing or going down.* |
 | Risk resolution | Compared sources and picked **Binance** for crypto (exchange's own prices, no key) and **Finnhub** for stocks/ETFs (official real-time US quotes, free key), with **Yahoo Finance** as a no-key option. Key read from env var or git-ignored `config.properties`. Refresh rates kept under free limits (3 s / 15 s). Downloads run on a background thread and results go back to the UI thread. If an API fails, the last price is kept; if none answer at start-up, the app uses the simulator. JSON parsing is unit-tested with sample answers and the feed is tested with a fake provider. |
 | Develop | `QuoteProvider` interface, `HttpQuoteProvider` + 3 providers, `LivePriceFeed`, `AppConfig`, sidebar data-status label. **No changes were needed in `MarketService`, `TradingService` or the pages**, because they only depend on the `PriceFeed` interface (Open/Closed principle proven in practice). |
-| Evaluate | 32 tests green. Future loop ideas: database storage (new `Repository`), trailing-stop order (new `Order` subclass), Indian NSE stocks (new `QuoteProvider`). |
+| Evaluate | 32 tests green. Feedback: the project should feel like a professional trading platform (realistic fills, charts, analytics, backtesting, automation, competition). That became loop 6. |
+
+## Loop 6: Professional trading features
+
+| Quadrant | Work done |
+|---|---|
+| Objectives | Take-Profit orders, spread + slippage, realized P&L, candlestick charts (real history, 1D to ALL ranges), order book, backtesting with historical replay, risk analytics, auto-trading bots, leaderboard and account reset. |
+| Risks | *Wrong financial formulas* (Sharpe, Sortino, drawdown). *Look-ahead bias* in backtests (a strategy secretly seeing the future). *Bots selling the user's own shares.* *Meaningless Sharpe values from a few seconds of data.* *UI freezing while history downloads.* *The code getting too big to explain.* |
+| Risk resolution | Every formula is unit-tested against hand-calculated values. `BacktestEngine` only gives the strategy `candles.subList(0, i + 1)`, so it can never see the future. Each bot tracks its own position and only sells what it bought. Sharpe/Sortino use **daily** returns and show "n/a" until there are 3 days of data. History loads on a background thread. The same `TradingStrategy` interface is reused by backtests and bots. |
+| Develop | Packages `execution`, `strategy`, `backtest`, `analytics`, `bot`; `ChartService`, `AnalyticsService`, `LeaderboardService`; 4 new pages (Analytics, Backtest, Auto-Trade, Leaderboard); candlestick chart and order book components. Existing classes changed only where needed (`TradingService` gets an `ExecutionModel` through its constructor, `Transaction` gained realized P&L). |
+| Evaluate | 58 tests green. The UI was then redesigned as a trading terminal (sidebar with 10 pages); the new features were fitted into it: the terminal's candlestick chart now reads real history from `ChartService`, its depth panel uses `OrderBookSimulator`, the order ticket gained Take-Profit, and Portfolio/History show the real realized P&L. Margin/leverage was considered and left out to keep the project explainable. Future ideas: margin accounts, short selling, OCO/bracket orders, Indian NSE data. |

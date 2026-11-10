@@ -21,6 +21,7 @@ title FODA Feature Model - Paper Trading Simulator
 **** Market
 **** Limit
 **** Stop-Loss
+**** Take-Profit
 *** Fee Strategy (mandatory, alternative)
 **** Percentage (selected)
 **** Flat
@@ -33,6 +34,27 @@ title FODA Feature Model - Paper Trading Simulator
 ** Persistence (mandatory, alternative)
 *** CSV files (selected)
 *** In-memory (tests)
+** Realistic Execution (mandatory, alternative)
+*** Spread + slippage (selected)
+*** Perfect fills (tests)
+** Charts (optional)
+*** Candlesticks 1D..ALL (5m / 1h / 1d / 1w)
+*** Order book depth
+** Backtesting & Replay (optional)
+*** Strategy (or-group)
+**** SMA Crossover
+**** RSI
+**** Buy & Hold
+**** Custom price rule
+*** Replay speed 1x / 2x / 5x
+** Risk Analytics (optional)
+*** Sharpe / Sortino
+*** Max drawdown
+*** Win rate / Profit factor
+** Auto-Trading Bots (optional)
+** Competition (optional)
+*** Leaderboard
+*** Reset account
 ** Visualisation (optional)
 *** 3D portfolio bars (optional)
 *** 3D login coin (optional)

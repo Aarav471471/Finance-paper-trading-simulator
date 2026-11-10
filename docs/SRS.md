@@ -57,7 +57,7 @@ internet; without internet it switches to simulated prices. Data is stored in CS
 `data/` folder next to the app.
 
 ### 2.2 Product functions (summary)
-1. Register, log in, log out
+1. Register, log in, log out, reset account, leaderboard
 2. View live real market prices (simulated when offline) and a price chart per asset
 3. Place Market, Limit and Stop-Loss orders (buy and sell)
 4. Preview the fee and total before trading
@@ -66,6 +66,10 @@ internet; without internet it switches to simulated prices. Data is stored in CS
 7. View portfolio holdings with live value and P&L
 8. View transaction history and export it to CSV
 9. View a 3D bar chart of the portfolio and a 3D animated login screen
+10. Candlestick charts (1D to ALL ranges) and a simulated order book
+11. Backtest strategies with historical replay (1x/2x/5x)
+12. Risk analytics: Sharpe, Sortino, max drawdown, win rate, profit factor
+13. Auto-trading bots driven by strategies or custom price rules
 
 ### 2.3 User classes
 | User | Description |
@@ -132,6 +136,15 @@ Feature types used (FODA notation):
 | CSV export | Optional | |
 | Persistence | Mandatory, **alternative** | CSV files (app) or in-memory (tests) |
 | Visualisation: 3D bars, 3D coin, live ticker | Optional | |
+| Order Type: Take-Profit | Member of the order-type or-group | |
+| Execution Model | Mandatory, **alternative** | Realistic (spread + slippage, app) or Perfect (tests) |
+| Candlestick chart: 1D / 1W / 1M / 3M / 1Y / 5Y / ALL | Optional, **or-group** | |
+| Order book depth | Optional | |
+| Backtesting & replay | Optional | requires *History provider* and *Strategy* |
+| Strategy | Mandatory under Backtesting / Bots, **or-group** | SMA Crossover, RSI, Buy & Hold, Price Rule |
+| Risk analytics | Optional | Sharpe, Sortino, Max DD, Win rate, Profit factor |
+| Auto-trading bots | Optional | requires *Strategy* and *Trading* |
+| Leaderboard, Reset account | Optional | requires *User Management* |
 
 **Composition rules** (constraints between features):
 - *Limit* and *Stop-Loss* **require** *Price Source* (they wait for price ticks).
@@ -209,6 +222,19 @@ See [uml/component-diagram.png](uml/component-diagram.png).
 | FR-22 | The system shall list all transactions, newest first, and export them to CSV. | Medium |
 | FR-23 | The system shall save users, holdings and transactions to disk and load them on the next start. | High |
 | FR-24 | The system shall create a demo account (`demo` / `demo`) with sample holdings on first run. | Low |
+| FR-25 | The system shall support **Take-Profit** orders (sell when price ≥ target, buy when price ≤ target). | High |
+| FR-26 | The system shall fill buys at the **ask** and sells at the **bid**, with a spread that depends on asset type (ETF 0.01%, Stock 0.02%, Crypto 0.05%). | High |
+| FR-27 | The system shall add random **slippage** (up to 0.05%) and **market impact** (0.1% per $1M of order value) against the trader; a Limit order shall never fill worse than its limit. | High |
+| FR-28 | The system shall record **realized P&L** on every sell ((fill price − average cost) × units − fee) and show realized and unrealized P&L separately. | High |
+| FR-29 | The system shall show an interactive **candlestick chart** from real history (Binance klines, Yahoo chart) with ranges 1D / 1W / 1M / 3M / 1Y / 5Y / ALL (5-minute, 1-hour, daily and weekly candles), volume, OHLC crosshair, SMA/EMA/RSI/MACD, kept up to date by live prices. | High |
+| FR-30 | The system shall show a simulated **order book** (bid and ask levels around the real bid/ask, and the spread) for the selected asset. | Medium |
+| FR-31 | The system shall **backtest** a chosen strategy on one year of daily candles with virtual cash, replaying candle by candle at **1x, 2x, 5x** or instantly, with pause and reset. | High |
+| FR-32 | The system shall offer the strategies SMA Crossover (10/30), RSI (14, 30/70), Buy & Hold and a user-defined price rule (IF price ≤ X THEN buy, IF price ≥ Y THEN sell). | High |
+| FR-33 | The system shall compute **Sharpe ratio, Sortino ratio, maximum drawdown, win rate, profit factor** and total return for both backtests and the user's account. | High |
+| FR-34 | The system shall record the user's net worth every 15 seconds as an equity curve, and draw it. | Medium |
+| FR-35 | The system shall let the user start **trading bots** that apply a strategy to live 1-minute candles every 5 seconds and place paper orders; a bot only sells units it bought itself. | High |
+| FR-36 | The system shall show a **leaderboard** of all users ranked by net worth with return %, realized P&L and number of trades. | Medium |
+| FR-37 | The system shall let a user **reset** their account (cash back to the start, holdings, history, pending orders and bots cleared) after confirmation. | Medium |
 
 ### 4.2 Non-functional requirements
 
@@ -264,4 +290,10 @@ Diagram: [uml/use-case-diagram.png](uml/use-case-diagram.png)
 | FR-17 | `FeeCalculator` implementations | `FeeCalculatorTest` |
 | FR-18 | `Portfolio`, `Holding` | `PortfolioTest` |
 | FR-23 | `FileUserRepository`, `FileTransactionRepository` | `PersistenceTest` |
+| FR-25..28 | `TakeProfitOrder`, `RealisticExecutionModel`, `Asset.getBid/getAsk`, `TradingService` | `ExecutionModelTest`, `LeaderboardAndResetTest` |
+| FR-29..30 | `ChartService`, `HistoryProvider`s, `CandleChartPanel`, `OrderBookSimulator` | `ChartServiceTest`, `QuoteParsingTest`, `ExecutionModelTest` |
+| FR-31..33 | `BacktestEngine`, `TradingStrategy` implementations, `PerformanceAnalyzer` | `StrategyAndBacktestTest`, `PerformanceAnalyzerTest` |
+| FR-34 | `AnalyticsService`, `FileEquityRepository` | manual |
+| FR-35 | `TradingBot`, `BotService` | manual (screenshot) |
+| FR-36..37 | `LeaderboardService`, `TradingService.resetAccount` | `LeaderboardAndResetTest` |
 | FR-20 | `Portfolio3DView` | manual (screenshot) |
