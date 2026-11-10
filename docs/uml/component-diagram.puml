@@ -22,7 +22,8 @@ package "Domain Model" {
 }
 
 package "Infrastructure" {
-  [SimulatedPriceFeed] as Feed
+  [LivePriceFeed\n(+ SimulatedPriceFeed fallback)] as Feed
+  [Quote Providers:\nBinance, Finnhub, Yahoo] as Providers
   [Fee Calculators] as Fees
   [File Repositories] as Repo
   database "data/*.csv" as Files
@@ -45,6 +46,9 @@ Trading ..> Fees : <<FeeCalculator>>
 Trading ..> Repo : <<Repository>>
 Auth ..> Repo : <<Repository>>
 Repo --> Files : read / write CSV
+Feed --> Providers : <<QuoteProvider>>
+cloud "Market data APIs\n(HTTPS / JSON)" as Internet
+Providers --> Internet : HTTPS
 Feed ..> Market : <<PriceListener>>\nprice ticks
 Feed ..> Trading : <<PriceListener>>\nprice ticks
 @enduml

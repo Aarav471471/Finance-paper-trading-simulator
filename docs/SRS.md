@@ -18,9 +18,11 @@ project team, the evaluator and anyone who maintains the code later.
 
 ### 1.2 Scope
 PaperTrader 3D is a Java desktop application that lets a user practise buying and selling
-stocks, cryptocurrencies and ETFs with **virtual money**. Prices are simulated live. The user can
+stocks, cryptocurrencies and ETFs with **virtual money** at live market prices. The user can
 place Market, Limit and Stop-Loss orders, track profit and loss, and view their portfolio as a
-rotatable 3D bar chart. No real money and no real exchange are involved.
+rotatable 3D bar chart. Prices are **real market prices** (Binance for crypto, Finnhub or Yahoo
+Finance for stocks and ETFs), with a simulated mode for offline use. No real money and no real
+orders are involved.
 
 ### 1.3 Definitions
 | Term | Meaning |
@@ -50,12 +52,13 @@ the requirements to the UML diagrams.
 ## 2. Overall Description
 
 ### 2.1 Product perspective
-A stand-alone desktop application. It needs no internet or server. Data is stored in CSV files in
-a `data/` folder next to the app.
+A stand-alone desktop application. It reads live prices from public market data APIs over the
+internet; without internet it switches to simulated prices. Data is stored in CSV files in a
+`data/` folder next to the app.
 
 ### 2.2 Product functions (summary)
 1. Register, log in, log out
-2. View live simulated market prices and a price chart per asset
+2. View live real market prices (simulated when offline) and a price chart per asset
 3. Place Market, Limit and Stop-Loss orders (buy and sell)
 4. Preview the fee and total before trading
 5. Automatically execute waiting orders when their price condition is met
@@ -69,7 +72,7 @@ a `data/` folder next to the app.
 |---|---|
 | Guest | Not logged in. Can register or log in. |
 | Trader | Logged-in user. Can use every trading feature. |
-| Market Simulator (system actor) | The timer that updates prices every second. |
+| Market Data Feed (system actor) | The live APIs (or the offline simulator) that update prices. |
 
 ### 2.4 Operating environment
 - Java 17 or newer, Windows / macOS / Linux
@@ -81,7 +84,8 @@ a `data/` folder next to the app.
 - Code must be simple enough to explain in a viva.
 
 ### 2.6 Assumptions and dependencies
-- Prices are simulated with a random walk; they are not real market prices.
+- Live prices come from third-party APIs; their accuracy and availability are outside our control. US stocks only move during US market hours (about 8:00 PM to 2:30 AM IST); crypto moves 24/7.
+- Prices are shown in US dollars (crypto in USDT, a dollar-pegged coin).
 - Quantities are whole units.
 - Only one user is logged in at a time on one computer.
 
@@ -95,12 +99,13 @@ relationships, functional model) and **Architecture Modelling**.
 ### 3.1 Context analysis
 **Domain:** retail securities trading for learners.
 **Domain scope:** account management, market data, order management, portfolio accounting,
-visualisation. Out of scope: real brokers, real payments, margin, short selling, options.
+visualisation. Out of scope: real brokers, real orders, real payments, margin, short selling, options.
 
 Context diagram (data flows):
 ```
-             register / login / orders            prices every second
-  [Trader] ----------------------------> [ PaperTrader 3D ] <-------------- [Price Simulator]
+             register / login / orders               live quotes (HTTPS/JSON)
+  [Trader] ----------------------------> [ PaperTrader 3D ] <-------------- [Binance, Finnhub /
+                                                                              Yahoo Finance]
            <----------------------------           |
               dashboards, P&L, 3D charts           v
                                               [ data/*.csv ]
@@ -116,7 +121,9 @@ Feature types used (FODA notation):
 | User Management | Mandatory | Register, Login/Logout, Password hashing |
 | Market Data | Mandatory | |
 | Asset Catalog: Stock / Crypto / ETF | Mandatory, **or-group** | At least one; all three implemented |
-| Price Source | Mandatory, **alternative** (exactly one) | Simulated feed (selected) or Live API (future) |
+| Price Source | Mandatory, **alternative** (exactly one) | Live APIs (default) or Simulated feed (offline) |
+| Stock/ETF quote provider | Mandatory under Live, **alternative** | Finnhub (with free key) or Yahoo Finance (no key) |
+| Crypto quote provider | Mandatory under Live | Binance |
 | Price history chart | Optional | |
 | Order Type: Market / Limit / Stop-Loss | Mandatory, **or-group** | All three implemented |
 | Fee Strategy | Mandatory, **alternative** | Percentage (selected) or Flat |
@@ -132,12 +139,14 @@ Feature types used (FODA notation):
 - *3D portfolio bars* **requires** *Holdings*.
 - *CSV export* **requires** *Transaction history*.
 
-**Binding time:** Fee strategy, Price source and Persistence are bound at *start-up* in `App.java`
-(one line each). Order type and Asset are bound at *run-time* by the user.
+**Binding time:** Fee strategy, Price source and Persistence are bound at *start-up* in `App.java`.
+Price source and quote provider are chosen from `config.properties` / environment variables
+(`data.mode`, `finnhub.apiKey`), and the app falls back to Simulated automatically if no API answers. Order type and Asset are bound at *run-time* by the user.
 
 **How features map to code:** an *alternative* feature becomes an **interface** with one class per
 alternative (`FeeCalculator` → `PercentageFeeCalculator` / `FlatFeeCalculator`; `PriceFeed` →
-`SimulatedPriceFeed`; `Repository` → `File…` / `InMemory…`). An *or-group* becomes an
+`LivePriceFeed` / `SimulatedPriceFeed`; `QuoteProvider` → `BinanceQuoteProvider` /
+`FinnhubQuoteProvider` / `YahooQuoteProvider`; `Repository` → `File…` / `InMemory…`). An *or-group* becomes an
 **abstract class** with subclasses (`Order` → `MarketOrder` / `LimitOrder` / `StopLossOrder`;
 `Asset` → `Stock` / `Crypto` / `ETF`).
 
@@ -176,7 +185,12 @@ See [uml/component-diagram.png](uml/component-diagram.png).
 | FR-3 | The system shall give each new user $100,000 virtual cash. | High |
 | FR-4 | The system shall log a user in only with the correct password, and store only a SHA-256 hash of the password. | High |
 | FR-5 | The system shall offer 10 assets (5 stocks, 3 cryptos, 2 ETFs) with name, type and risk level. | High |
-| FR-6 | The system shall update every price once per second using a random walk whose size depends on the asset type (ETF < Stock < Crypto). | High |
+| FR-6 | The system shall use **real market prices** by default: crypto from Binance (refreshed every 3 s), stocks and ETFs from Finnhub when an API key is configured, otherwise Yahoo Finance (refreshed every 15 s). | High |
+| FR-6a | The system shall load real prices before the main window opens, so trading starts at market prices. | High |
+| FR-6b | The system shall show "change %" against the real previous close (24 h open for crypto). | Medium |
+| FR-6c | The system shall show each data source's status (live with last update time, or offline) in the sidebar. | Medium |
+| FR-6d | If no market data API is reachable at start-up, or `data.mode=simulated` is set, the system shall use simulated random-walk prices whose size depends on asset type (ETF < Stock < Crypto). | High |
+| FR-6e | If an API fails while running, the system shall keep the last known price and retry on the next refresh. | High |
 | FR-7 | The system shall show a live price table with change %, flashing green/red on each change. | Medium |
 | FR-8 | The system shall show a line chart of the last 90 prices of the selected asset. | Medium |
 | FR-9 | The system shall let the trader place a **Market** order that executes immediately. | High |
@@ -200,7 +214,10 @@ See [uml/component-diagram.png](uml/component-diagram.png).
 
 | ID | Category | Requirement |
 |---|---|---|
-| NFR-1 | Performance | The UI shall refresh within 1 second of a price tick and stay responsive (no freezing). |
+| NFR-1 | Performance | The UI shall refresh within 1 second of a price update and never freeze while waiting for the internet (downloads run on a background thread). |
+| NFR-1a | Accuracy | Displayed prices shall match the source exchange/API within one refresh interval (3 s crypto, 15 s stocks). |
+| NFR-1b | Rate limits | The app shall stay within free API limits (Finnhub: 60 calls/min; app uses about 28). |
+| NFR-4a | Security | API keys shall be read from an environment variable or a git-ignored `config.properties`, never from source code. |
 | NFR-2 | Usability | A new user shall be able to place a first trade within 2 minutes without help. |
 | NFR-3 | Reliability | Invalid input shall never crash the app; it shall show a clear message. |
 | NFR-4 | Security | Passwords shall never be stored in plain text. |
@@ -211,7 +228,11 @@ See [uml/component-diagram.png](uml/component-diagram.png).
 
 ### 4.3 External interface requirements
 - **User interface:** dark theme desktop window, left sidebar with Dashboard, Market, Trade, Portfolio, History, and a Log out button. Login screen with a 3D spinning coin.
-- **Software interfaces:** Java 17 SE, Swing, FlatLaf 3.4, JavaFX 21 (controls + swing), JUnit 5.
+- **Software interfaces:** Java 17 SE, Swing, FlatLaf 3.4, JavaFX 21 (controls + swing), org.json, JUnit 5.
+- **Communication interfaces (HTTPS, JSON):**
+  - Binance `GET /api/v3/ticker/24hr?symbols=[...]` → `lastPrice`, `openPrice`
+  - Finnhub `GET /api/v1/quote?symbol=..&token=..` → `c` (current), `pc` (previous close)
+  - Yahoo Finance `GET /v8/finance/chart/{symbol}` → `meta.regularMarketPrice`, `meta.chartPreviousClose`
 - **Files:** `data/users.csv`, `data/holdings.csv`, `data/transactions.csv`.
 
 ---
@@ -227,7 +248,7 @@ Diagram: [uml/use-case-diagram.png](uml/use-case-diagram.png)
 - *Post-condition:* cash, holdings and history are updated and saved (if filled).
 
 **UC-13 Execute pending orders**
-- *Actor:* Market Simulator. *Trigger:* each price tick.
+- *Actor:* Market Data Feed. *Trigger:* each price update.
 - *Flow:* for each waiting order of that asset, if `canExecute(newPrice)` then execute; if it now fails (e.g. cash spent), mark REJECTED.
 
 ---
@@ -237,7 +258,7 @@ Diagram: [uml/use-case-diagram.png](uml/use-case-diagram.png)
 | Requirement | Class(es) | Test |
 |---|---|---|
 | FR-1..4 | `AuthService`, `User`, `PasswordHasher` | `AuthServiceTest` |
-| FR-6 | `SimulatedPriceFeed`, `Asset.getVolatility()` | `ConsoleDemo` |
+| FR-6..6e | `LivePriceFeed`, `BinanceQuoteProvider`, `FinnhubQuoteProvider`, `YahooQuoteProvider`, `SimulatedPriceFeed` | `QuoteParsingTest`, `LivePriceFeedTest`, `ConsoleDemo` |
 | FR-9..11 | `MarketOrder`, `LimitOrder`, `StopLossOrder` | `OrderTest` |
 | FR-13..16 | `TradingService`, `Account` | `TradingServiceTest`, `AccountTest` |
 | FR-17 | `FeeCalculator` implementations | `FeeCalculatorTest` |

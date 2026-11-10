@@ -11,7 +11,7 @@ package model {
     - symbol : String
     - name : String
     - price : double
-    - openingPrice : double
+    - previousClose : double
     + getPrice() : double
     + setPrice(p : double)
     + getChangePercent() : double
@@ -117,6 +117,12 @@ package interfaces {
     + findByUsername(u : String) : List<Transaction>
     + nextId() : int
   }
+  interface QuoteProvider {
+    + getName() : String
+    + supports(asset : Asset) : boolean
+    + fetchQuotes(assets) : Map<String, Quote>
+    + getRefreshSeconds() : int
+  }
   interface Exportable {
     + toCsvRow() : String
   }
@@ -152,6 +158,16 @@ package "feed / fees / repository" as impl {
   class SimulatedPriceFeed {
     + tick()
   }
+  class LivePriceFeed {
+    + loadInitialPrices() : boolean
+    - poll(provider, assets)
+  }
+  abstract class HttpQuoteProvider {
+    # get(url : String) : String
+  }
+  class BinanceQuoteProvider
+  class FinnhubQuoteProvider
+  class YahooQuoteProvider
   class PercentageFeeCalculator
   class FlatFeeCalculator
   class InMemoryUserRepository
@@ -180,6 +196,13 @@ Transaction ..|> Exportable
 Repository <|-- TransactionRepository
 PriceFeed ..> PriceListener : notifies
 SimulatedPriceFeed ..|> PriceFeed
+LivePriceFeed ..|> PriceFeed
+LivePriceFeed o-- "1..*" QuoteProvider
+LivePriceFeed *-- "1" SimulatedPriceFeed : fallback
+HttpQuoteProvider ..|> QuoteProvider
+BinanceQuoteProvider --|> HttpQuoteProvider
+FinnhubQuoteProvider --|> HttpQuoteProvider
+YahooQuoteProvider --|> HttpQuoteProvider
 PercentageFeeCalculator ..|> FeeCalculator
 FlatFeeCalculator ..|> FeeCalculator
 InMemoryUserRepository ..|> Repository

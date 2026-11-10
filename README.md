@@ -1,7 +1,8 @@
 # PaperTrader 3D: Finance Paper Trading Simulator
 
 A Java desktop app for practising trading **stocks, crypto and ETFs** with virtual money.
-It has live simulated prices, Market / Limit / Stop-Loss orders, portfolio P&L, and **3D visuals**
+It uses **real live market prices** (Binance for crypto, Finnhub / Yahoo Finance for stocks and ETFs),
+with Market / Limit / Stop-Loss orders, portfolio P&L, and **3D visuals**
 (a JavaFX 3D portfolio chart you can rotate and a spinning 3D coin on the login screen).
 
 Built as an OOP / Software Engineering project: four OOP pillars, interfaces, SOLID, high cohesion
@@ -19,12 +20,30 @@ Requirements: **Java 17+** and **Maven** (IntelliJ IDEA / Eclipse / VS Code can 
 
 ```bash
 mvn compile exec:java          # start the app
-mvn test                       # run the 26 unit tests
+mvn test                       # run the 32 unit tests
 mvn package                    # build target/paper-trading-simulator-1.0.0.jar
 java -jar target/paper-trading-simulator-1.0.0.jar
 ```
 
 Log in with **demo / demo** (created on first run with some sample holdings), or create your own account.
+
+## Real market data
+
+| Assets | Source | Key needed? | Refresh |
+|---|---|---|---|
+| Crypto (BTC, ETH, SOL) | **Binance**: the exchange's own last traded price (USDT ≈ USD) | No | every 3 s |
+| Stocks & ETFs (AAPL, MSFT, GOOGL, TSLA, AMZN, SPY, QQQ) | **Finnhub**: official real-time US exchange quotes | Free key | every 15 s |
+| Stocks & ETFs (when no Finnhub key) | **Yahoo Finance** | No | every 15 s |
+
+It works without any setup (Binance + Yahoo). For the most accurate stock prices, add a free Finnhub key:
+
+1. Get a key at <https://finnhub.io/register>.
+2. Copy `config.example.properties` to `config.properties` and set `finnhub.apiKey=YOUR_KEY`
+   (or set the environment variable `FINNHUB_API_KEY`). `config.properties` is git-ignored.
+
+The sidebar shows each source's status, e.g. `Binance: live 16:30:05`. "Change %" is measured from the previous close
+(24 h ago for crypto). US stocks only move during US market hours (about 8:00 PM–2:30 AM IST), and crypto moves 24/7.
+With no internet, the app uses simulated prices automatically. You can also force that with `data.mode=simulated`.
 
 The console-only prototype (no UI) shows the engine works on its own:
 ```bash
@@ -41,6 +60,7 @@ mvn compile exec:java -Dexec.mainClass=com.papertrader.ConsoleDemo
 | Java Swing (built-in) | All screens, tables, forms |
 | FlatLaf 3.4 | Modern dark look-and-feel for Swing |
 | JavaFX 21 (`javafx-controls`, `javafx-swing`) | 3D views, embedded in Swing with `JFXPanel` |
+| org.json | Reading the JSON answers from the market data APIs |
 | JUnit 5 | Unit tests |
 
 ## Project structure
@@ -51,18 +71,19 @@ src/main/java/com/papertrader/
 ├── model/                   Asset ← Stock, Crypto, ETF
 │                            Order ← MarketOrder, LimitOrder, StopLossOrder
 │                            User, Account, Portfolio, Holding, Transaction, enums
-├── interfaces/              PriceFeed, PriceListener, FeeCalculator,
+├── interfaces/              PriceFeed, PriceListener, QuoteProvider, FeeCalculator,
 │                            Repository<T,ID>, TransactionRepository, Exportable
-├── feed/                    SimulatedPriceFeed (random-walk prices every second)
+├── feed/                    LivePriceFeed (real prices) + Binance/Finnhub/Yahoo QuoteProviders,
+│                            SimulatedPriceFeed (offline random-walk prices)
 ├── fees/                    PercentageFeeCalculator, FlatFeeCalculator
 ├── repository/              InMemory… and File… repositories (CSV in data/)
 ├── service/                 AuthService, MarketService, TradingService, PortfolioService
 ├── exception/               SimulatorException ← InsufficientFunds, InvalidOrder, Auth
-├── util/                    Formatter, PasswordHasher, CsvExporter
+├── util/                    Formatter, PasswordHasher, CsvExporter, AppConfig
 └── ui/                      MainFrame, LoginPanel, BasePanel ← Dashboard/Market/Trade/
     ├── components/          Portfolio/History panels; StatCard, LineChartPanel, TickerPanel, renderers
     └── three/               Base3DView ← Coin3DView, Portfolio3DView (JavaFX 3D)
-src/test/java/com/papertrader/   26 JUnit tests
+src/test/java/com/papertrader/   32 JUnit tests
 docs/
 ├── SRS.md                   Software Requirements Specification (FODA)
 ├── SpiralModel.md           SDLC: 4 spiral loops
