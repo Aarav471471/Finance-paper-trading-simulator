@@ -1,0 +1,97 @@
+# OOP & SOLID Viva Cheat Sheet
+
+Every concept below points to the exact file to open during the viva.
+(All paths are under `src/main/java/com/papertrader/`.)
+
+## 1. The four pillars of OOP
+
+### Abstraction: show *what* something does, hide *how*
+| Where | What to say |
+|---|---|
+| `model/Asset.java` | Abstract class. You can't write `new Asset(...)`. It declares `getType()`, `getRiskLevel()`, `getVolatility()` without a body. |
+| `model/Order.java` | Abstract `canExecute(price)`. Each order type fills in its own rule. |
+| `interfaces/PriceFeed.java` | The UI and services only know "something that gives prices". They don't know it's random. |
+| `ui/three/Base3DView.java` | Hides all the Swing↔JavaFX bridge work; subclasses only write `createScene()`. |
+
+### Encapsulation: keep data private, change it only through methods that check it
+| Where | What to say |
+|---|---|
+| `model/Account.java` | `balance` is `private`. Only `deposit()` / `withdraw()` change it, and both validate. `withdraw()` throws `InsufficientFundsException`. |
+| `model/Asset.java` | `setPrice()` rejects zero/negative prices. |
+| `model/Portfolio.java` | `getHoldings()` returns a **copy**, so outside code can't change the internal map. |
+| `model/Order.java` | Status only changes via `markFilled()`, `markCancelled()`, `markRejected()`. |
+| `model/User.java` | Password stored only as a hash; checked with `checkPassword()`. |
+
+### Inheritance: a child class reuses and extends a parent class (IS-A)
+| Parent | Children |
+|---|---|
+| `Asset` | `Stock`, `Crypto`, `ETF` |
+| `Order` | `MarketOrder`, `LimitOrder`, `StopLossOrder` |
+| `SimulatorException` (extends `Exception`) | `InsufficientFundsException`, `InvalidOrderException`, `AuthException` |
+| `InMemoryUserRepository` | `FileUserRepository` (calls `super.save()` then writes the file) |
+| `BasePanel` (extends `JPanel`) | `DashboardPanel`, `MarketPanel`, `TradePanel`, `PortfolioPanel`, `HistoryPanel` |
+| `Base3DView` | `Coin3DView`, `Portfolio3DView` |
+| `DefaultTableCellRenderer` | `MoneyRenderer`, `ColoredNumberRenderer` |
+
+### Polymorphism: one name, many forms
+
+**Compile-time (static) polymorphism = method OVERLOADING.** Same method name, different parameters; the compiler picks.
+- `service/TradingService.java`: three `placeOrder(...)` methods:
+  - `placeOrder(user, asset, side, qty)` → market order
+  - `placeOrder(user, asset, side, qty, limitPrice)` → limit order
+  - `placeOrder(user, order)` → any order
+- Called from `ui/TradePanel.java` → `placeOrder()`.
+- Also: constructors of `SimulatedPriceFeed` are overloaded (with / without a `Random`).
+
+**Runtime (dynamic) polymorphism = method OVERRIDING + parent reference.** Java decides at run time which version runs.
+- `TradingService.placeOrder()` and `onPriceUpdate()` call `order.canExecute(price)` on an `Order` reference. The object may be a `MarketOrder`, `LimitOrder` or `StopLossOrder`.
+- `SimulatedPriceFeed.tick()` calls `asset.getVolatility()`, so Crypto moves more than ETF.
+- `MainFrame.refreshCurrentPage()` calls `currentPage.refresh()` on a `BasePanel` reference.
+- `LineChartPanel.paintComponent()` overrides Swing's method; Swing calls our version.
+- Test that proves it: `OrderTest.sameCallDifferentBehaviour()`.
+
+## 2. Interfaces
+| Interface | Implemented by | Why |
+|---|---|---|
+| `PriceFeed` | `SimulatedPriceFeed` | swap in a real API later |
+| `PriceListener` | `MarketService`, `TradingService` | Observer pattern |
+| `FeeCalculator` | `PercentageFeeCalculator`, `FlatFeeCalculator` | Strategy pattern |
+| `Repository<T, ID>` (generic) | `InMemoryUserRepository`, `FileUserRepository` | storage independence |
+| `TransactionRepository` (extends `Repository`) | `InMemoryTransactionRepository`, `FileTransactionRepository` | interface inheritance |
+| `Exportable` | `Transaction`, `Holding` | `CsvExporter` works with any of them |
+| `Refreshable` | `BasePanel` | every page can refresh itself |
+
+## 3. SOLID principles
+| Principle | Where it shows |
+|---|---|
+| **S** Single Responsibility | `AuthService` = login only; `TradingService` = orders only; `PortfolioService` = calculations only; `MarketService` = assets & history only; `Portfolio` stores units but does no money maths. |
+| **O** Open/Closed | Add `TrailingStopOrder extends Order` or `class Bond extends Asset` without editing `TradingService`. Change fee rule with one line in `App.java`. |
+| **L** Liskov Substitution | `InMemoryUserRepository` and `FileUserRepository` are interchangeable (tests use one, the app uses the other). Any `Order` subclass works wherever `Order` is expected. |
+| **I** Interface Segregation | Small interfaces: `PriceListener` has 1 method, `Exportable` has 1, `FeeCalculator` has 2. `TransactionRepository` adds extra methods only where needed instead of bloating `Repository`. |
+| **D** Dependency Inversion | `TradingService` and `AuthService` depend on interfaces, received through the constructor. Concrete classes are created only in `App.java` (the composition root). |
+
+## 4. Cohesion and coupling
+- **High cohesion:** each package has one theme (`model`, `service`, `repository`, `fees`, `feed`, `ui`, `ui/three`, `ui/components`), and each class does one job.
+- **Low coupling:**
+  - The UI only talks to services, never to files or the price feed.
+  - Services talk to interfaces, not concrete classes.
+  - `LoginPanel` gets a `Runnable onLoginSuccess` instead of a reference to `MainFrame`.
+  - The Observer pattern means the price feed doesn't know who is listening.
+  - Proof: `ConsoleDemo.java` runs the full engine with **no UI at all**.
+
+## 5. Design patterns used (bonus points)
+| Pattern | Where |
+|---|---|
+| Observer | `PriceFeed` → `PriceListener` |
+| Strategy | `FeeCalculator` |
+| Repository | `Repository<T, ID>` |
+| Template Method | `Base3DView.start3D()` + abstract `createScene()` |
+| Composition root / Dependency Injection | `App.start()` |
+
+## 6. Likely viva questions
+- **Abstract class vs interface?** `Asset` and `Order` share fields and code, so they're abstract classes. `FeeCalculator` and `PriceFeed` only describe behaviour, so they're interfaces. A class can implement many interfaces but extend only one class.
+- **Why is `placeOrder` overloaded and not overridden?** Overloading = same class, different parameters (compile time). Overriding = subclass replaces a parent method (run time), like `canExecute`.
+- **How does a limit order execute later?** `TradingService` is a `PriceListener`. Every tick, `onPriceUpdate()` checks waiting orders with `canExecute(newPrice)`.
+- **Why a Swing Timer for prices?** It runs on the UI thread, so the UI and engine never run at the same time. No locks needed.
+- **How does 3D work in a Swing app?** `JFXPanel` is a Swing component that hosts a JavaFX scene. JavaFX 3D shapes (`Box`, `Cylinder`), `PhongMaterial`, `PointLight` and `PerspectiveCamera` draw the 3D view.
+- **How is data saved?** CSV files in `data/`. `FileUserRepository` extends the in-memory repository and writes files after each save.
