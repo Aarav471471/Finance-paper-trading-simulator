@@ -1,0 +1,199 @@
+@startuml class-diagram
+!pragma layout smetana
+title Paper Trading Simulator - Class Diagram
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam packageStyle rectangle
+hide empty members
+
+package model {
+  abstract class Asset {
+    - symbol : String
+    - name : String
+    - price : double
+    - openingPrice : double
+    + getPrice() : double
+    + setPrice(p : double)
+    + getChangePercent() : double
+    + {abstract} getType() : String
+    + {abstract} getRiskLevel() : RiskLevel
+    + {abstract} getVolatility() : double
+  }
+  class Stock {
+    - sector : String
+  }
+  class Crypto {
+    - blockchain : String
+  }
+  class ETF {
+    - trackedIndex : String
+  }
+
+  abstract class Order {
+    - {static} nextId : int
+    - id : int
+    - quantity : int
+    - status : OrderStatus
+    + {abstract} canExecute(price : double) : boolean
+    + {abstract} getOrderType() : String
+    + {abstract} getConditionText() : String
+    + markFilled(price : double)
+    + markCancelled()
+    + markRejected(reason : String)
+  }
+  class MarketOrder
+  class LimitOrder {
+    - limitPrice : double
+  }
+  class StopLossOrder {
+    - stopPrice : double
+  }
+
+  class User {
+    - username : String
+    - passwordHash : String
+    + checkPassword(p : String) : boolean
+  }
+  class Account {
+    - balance : double
+    + deposit(amount : double)
+    + withdraw(amount : double)
+  }
+  class Portfolio {
+    - holdings : Map<String, Holding>
+    + addUnits(symbol, units, price)
+    + removeUnits(symbol, units)
+    + getQuantity(symbol) : int
+  }
+  class Holding {
+    - symbol : String
+    - quantity : int
+    - averageCost : double
+    + getCostBasis() : double
+  }
+  class Transaction {
+    - id : int
+    - side : OrderSide
+    - quantity : int
+    - price : double
+    - fee : double
+    + getTotal() : double
+  }
+  enum OrderSide {
+    BUY
+    SELL
+  }
+  enum OrderStatus {
+    PENDING
+    FILLED
+    CANCELLED
+    REJECTED
+  }
+  enum RiskLevel {
+    LOW
+    MEDIUM
+    HIGH
+  }
+}
+
+package interfaces {
+  interface PriceFeed {
+    + addListener(l : PriceListener)
+    + start()
+    + stop()
+  }
+  interface PriceListener {
+    + onPriceUpdate(asset, oldPrice, newPrice)
+  }
+  interface FeeCalculator {
+    + calculateFee(value : double) : double
+  }
+  interface "Repository<T, ID>" as Repository {
+    + save(item : T)
+    + findById(id : ID) : Optional<T>
+    + findAll() : List<T>
+  }
+  interface TransactionRepository {
+    + findByUsername(u : String) : List<Transaction>
+    + nextId() : int
+  }
+  interface Exportable {
+    + toCsvRow() : String
+  }
+}
+
+package service {
+  class TradingService {
+    - pendingOrders : Map<Order, User>
+    + placeOrder(user, asset, side, qty) : Order
+    + placeOrder(user, asset, side, qty, limit) : Order
+    + placeOrder(user, order) : Order
+    + cancelOrder(order)
+    + onPriceUpdate(...)
+  }
+  class MarketService {
+    + getAllAssets() : List<Asset>
+    + getPriceHistory(symbol) : List<Double>
+    + onPriceUpdate(...)
+  }
+  class PortfolioService {
+    + getNetWorth(user) : double
+    + getTotalProfitLoss(user) : double
+  }
+  class AuthService {
+    - currentUser : User
+    + register(u, p) : User
+    + login(u, p) : User
+    + logout()
+  }
+}
+
+package "feed / fees / repository" as impl {
+  class SimulatedPriceFeed {
+    + tick()
+  }
+  class PercentageFeeCalculator
+  class FlatFeeCalculator
+  class InMemoryUserRepository
+  class FileUserRepository
+  class InMemoryTransactionRepository
+  class FileTransactionRepository
+}
+
+Asset <|-- Stock
+Asset <|-- Crypto
+Asset <|-- ETF
+Order <|-- MarketOrder
+Order <|-- LimitOrder
+Order <|-- StopLossOrder
+Order --> "1" Asset
+Order --> OrderSide
+Order --> OrderStatus
+Asset ..> RiskLevel
+
+User *-- "1" Account
+User *-- "1" Portfolio
+Portfolio o-- "0..*" Holding
+Holding ..|> Exportable
+Transaction ..|> Exportable
+
+Repository <|-- TransactionRepository
+PriceFeed ..> PriceListener : notifies
+SimulatedPriceFeed ..|> PriceFeed
+PercentageFeeCalculator ..|> FeeCalculator
+FlatFeeCalculator ..|> FeeCalculator
+InMemoryUserRepository ..|> Repository
+FileUserRepository --|> InMemoryUserRepository
+InMemoryTransactionRepository ..|> TransactionRepository
+FileTransactionRepository --|> InMemoryTransactionRepository
+
+TradingService ..|> PriceListener
+MarketService ..|> PriceListener
+TradingService --> FeeCalculator
+TradingService --> Repository
+TradingService --> TransactionRepository
+TradingService ..> Order : executes
+AuthService --> Repository
+PortfolioService --> MarketService
+MarketService o-- "0..*" Asset
+@enduml

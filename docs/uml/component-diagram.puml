@@ -1,0 +1,50 @@
+@startuml component-diagram
+!pragma layout smetana
+title Paper Trading Simulator - Component Diagram
+skinparam shadowing false
+
+package "Presentation Layer (Swing + JavaFX 3D)" {
+  [MainFrame] as MF
+  [Pages: Login, Dashboard,\nMarket, Trade, Portfolio, History] as Pages
+  [UI Components:\nStatCard, LineChart, Ticker] as Comp
+  [3D Views (JavaFX):\nCoin3DView, Portfolio3DView] as ThreeD
+}
+
+package "Service Layer" {
+  [AuthService] as Auth
+  [TradingService] as Trading
+  [MarketService] as Market
+  [PortfolioService] as PortSvc
+}
+
+package "Domain Model" {
+  [Assets, Orders, User,\nAccount, Portfolio, Transaction] as Model
+}
+
+package "Infrastructure" {
+  [SimulatedPriceFeed] as Feed
+  [Fee Calculators] as Fees
+  [File Repositories] as Repo
+  database "data/*.csv" as Files
+}
+
+MF --> Pages
+Pages --> Comp
+Pages --> ThreeD
+Pages --> Auth
+Pages --> Trading
+Pages --> Market
+Pages --> PortSvc
+
+Auth --> Model
+Trading --> Model
+PortSvc --> Model
+Market --> Model
+
+Trading ..> Fees : <<FeeCalculator>>
+Trading ..> Repo : <<Repository>>
+Auth ..> Repo : <<Repository>>
+Repo --> Files : read / write CSV
+Feed ..> Market : <<PriceListener>>\nprice ticks
+Feed ..> Trading : <<PriceListener>>\nprice ticks
+@enduml
