@@ -1,6 +1,9 @@
 package com.papertrader.ui;
 
 import com.papertrader.service.AnalyticsService;
+import com.papertrader.service.MarketDataService;
+import com.papertrader.util.MarketFormat;
+import com.papertrader.util.MarketHours;
 import com.papertrader.service.ChartService;
 import java.util.HashMap;
 import com.papertrader.interfaces.Exportable;
@@ -95,7 +98,10 @@ import java.util.function.Consumer;
  */
 public class PortfolioPanel extends BasePanel {
 
-    private static final double USD_TO_INR = 83.07;
+    /** USD -> INR rate. Updated from the live Yahoo "INR=X" quote; 83.07 is only the start value until it loads. */
+    private static double USD_TO_INR = 83.07;
+    private MarketDataService marketData;
+    private final JLabel statusLbl = new JLabel("NSE");
 
     private final AuthService authService;
     private final MarketService marketService;
@@ -135,7 +141,7 @@ public class PortfolioPanel extends BasePanel {
 
     // Table Summary Bar
     private final JLabel tableFooterSummaryLbl = new JLabel("Showing all 0 verified simulated market entries across 3 clearing channels");
-    private final JLabel tableFooterTurnoverLbl = new JLabel("Portfolio Turnover: 14.2%");
+    private final JLabel tableFooterTurnoverLbl = new JLabel("Portfolio Turnover (30d): -");
     private final JLabel tableFooterMarginLbl = new JLabel("Unrealized Margin: +$0.00");
 
     // Row 4: Sector Exposure & Risk
@@ -270,7 +276,6 @@ public class PortfolioPanel extends BasePanel {
         };
         statusPill.setOpaque(false);
         statusPill.setBorder(BorderFactory.createEmptyBorder(2, 16, 2, 8));
-        JLabel statusLbl = new JLabel("MARKET OPEN · 09:15 - 15:30 IST");
         statusLbl.setFont(Theme.MICRO);
         statusLbl.setForeground(Theme.GAIN);
         statusPill.add(statusLbl);
@@ -330,7 +335,11 @@ public class PortfolioPanel extends BasePanel {
     }
 
     private void updateClock() {
-        LocalDateTime now = LocalDateTime.now();
+        java.time.ZonedDateTime now = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Kolkata"));
+        marketService.findBySymbol("RELIANCE").ifPresent(a -> {
+            statusLbl.setText(MarketHours.status(a));
+            statusLbl.setForeground(MarketHours.isOpen(a) ? Theme.GAIN : Theme.WARNING);
+        });
         String ist = now.format(DateTimeFormatter.ofPattern("HH:mm:ss"));
         LocalDateTime utc = java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC).toLocalDateTime();
         String utcStr = utc.format(DateTimeFormatter.ofPattern("HH:mm:ss"));
@@ -496,7 +505,7 @@ public class PortfolioPanel extends BasePanel {
                 int row = holdingsTable.getSelectedRow();
                 if (row >= 0 && row < tableModel.filteredList.size()) {
                     HoldingRowData data = tableModel.filteredList.get(row);
-                    drawerPanel.updateHolding(data);
+                    drawerPanel.updateHolding(data, firstBuyText(data.symbol()), lastTradeText(data.symbol()));
                     drawerPanel.setVisible(true);
                 } else {
                     drawerPanel.setVisible(false);
@@ -639,11 +648,83 @@ public class PortfolioPanel extends BasePanel {
         }
     }
 
+    /** Live data used for the USD/INR rate. */
+    public void setMarketData(MarketDataService marketData) {
+        this.marketData = marketData;
+    }
+
+    /** Transactions of the logged-in user, loaded in refresh(). */
+    private List<Transaction> txHistory = List.of();
+
+    /** "First Purchased" text for a symbol: date of its oldest BUY. */
+    private String firstBuyText(String symbol) {
+        return txHistory.stream().filter(t -> t.getSymbol().equals(symbol) && t.getSide() == OrderSide.BUY)
+                .map(Transaction::getTimestamp).min(Comparator.naturalOrder())
+                .map(t -> t.format(DateTimeFormatter.ofPattern("dd MMM yyyy"))).orElse("N/A");
+    }
+
+    /** "Last Executed" text for a symbol: how long ago its newest trade was. */
+    private String lastTradeText(String symbol) {
+        return txHistory.stream().filter(t -> t.getSymbol().equals(symbol))
+                .map(Transaction::getTimestamp).max(Comparator.naturalOrder())
+                .map(t -> MarketFormat.timeAgo(t.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()))
+                .orElse("N/A");
+    }
+
+    /** Draws a real value series as a line (optionally filled) scaled to the box. Nothing if fewer than 2 values. */
+    static void drawSeries(Graphics2D g2, List<Double> values, int w, int h, Color color, boolean fill) {
+        if (values == null || values.size() < 2) {
+            return;
+        }
+        double min = Collections.min(values);
+        double max = Collections.max(values);
+        double range = max - min < 1e-9 ? 1 : max - min;
+        Path2D line = new Path2D.Double();
+        for (int i = 0; i < values.size(); i++) {
+            double x = (double) i / (values.size() - 1) * w;
+            double y = h - 3 - (values.get(i) - min) / range * (h - 6);
+            if (i == 0) line.moveTo(x, y);
+            else line.lineTo(x, y);
+        }
+        if (fill) {
+            Path2D area = new Path2D.Double(line);
+            area.lineTo(w, h);
+            area.lineTo(0, h);
+            area.closePath();
+            g2.setPaint(new GradientPaint(0, 0, new Color(color.getRed(), color.getGreen(), color.getBlue(), 60),
+                    0, h, new Color(color.getRed(), color.getGreen(), color.getBlue(), 0)));
+            g2.fill(area);
+        }
+        g2.setColor(color);
+        g2.setStroke(new BasicStroke(1.7f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g2.draw(line);
+    }
+
     @Override
     public void refresh() {
         User user = authService.getCurrentUser();
         if (user == null) {
             return;
+        }
+
+        if (marketData != null) {
+            marketData.index("INR=X").ifPresent(fx -> {
+                if (fx.price() > 1) {
+                    USD_TO_INR = fx.price();
+                }
+            });
+        }
+        txHistory = tradingService != null ? tradingService.getTransactionHistory(user) : List.of();
+        List<Double> equity = new ArrayList<>();
+        List<Double> todayEquity = new ArrayList<>();
+        List<com.papertrader.analytics.EquityPoint> curve = analytics != null
+                ? analytics.getEquityCurve(user) : List.of();
+        long midnight = java.time.LocalDate.now().atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+        for (com.papertrader.analytics.EquityPoint ep : curve) {
+            equity.add(ep.value());
+            if (ep.time() >= midnight) {
+                todayEquity.add(ep.value());
+            }
         }
 
         double cash = user.getAccount().getBalance();
@@ -655,7 +736,7 @@ public class PortfolioPanel extends BasePanel {
 
         // Realized P&L = profit locked in by sales (saved on every SELL transaction)
         Map<String, Double> realizedBySymbol = new HashMap<>();
-        for (Transaction t : tradingService.getTransactionHistory(user)) {
+        for (Transaction t : txHistory) {
             if (t.getSide() == OrderSide.SELL) {
                 realizedBySymbol.merge(t.getSymbol(), t.getRealizedPnl(), Double::sum);
             }
@@ -664,14 +745,19 @@ public class PortfolioPanel extends BasePanel {
 
         // 1. Update 5 KPI Cards
         cardNetWorth.updateValues(netWorth, pnl, pnlPct);
+        equity.add(netWorth);
+        todayEquity.add(netWorth);
+        cardNetWorth.setSeries(equity);
+        cardReturns.setSeries(equity);
+        cardTodayPnl.setSeries(todayEquity);
         cardInvested.updateValues(cost, netWorth, user.getPortfolio().getHoldings().size());
         // total return = realized (closed trades) + unrealized (open positions)
-        cardReturns.updateValues(pnl + realized, cost == 0 ? 0 : ((pnl + realized) / cost * 100.0));
+        cardReturns.updateValues(pnl + realized, cost == 0 ? 0 : ((pnl + realized) / cost * 100.0), "Over Cost Basis");
 
         // Intraday calculation
         double todayPnl = calculateTodayPnl(user);
         double todayPct = netWorth > 0 ? (todayPnl / netWorth * 100.0) : 0;
-        cardTodayPnl.updateValues(todayPnl, todayPct);
+        cardTodayPnl.updateValues(todayPnl, todayPct, "of Net Worth");
 
         cardCash.updateValues(cash, netWorth);
 
@@ -710,7 +796,15 @@ public class PortfolioPanel extends BasePanel {
         applyFilters();
 
         // 5. Update Table Footer
-        tableFooterSummaryLbl.setText(String.format("Showing all %d verified simulated market entries across 3 clearing channels", rows.size()));
+        long exchanges = rows.stream().map(HoldingRowData::exchange).distinct().count();
+        tableFooterSummaryLbl.setText(String.format("Showing all %d simulated positions across %d exchange%s",
+                rows.size(), exchanges, exchanges == 1 ? "" : "s"));
+        // turnover = value bought + sold in the last 30 days, compared with today's net worth
+        LocalDateTime monthAgo = LocalDateTime.now().minusDays(30);
+        double traded = txHistory.stream().filter(t -> t.getTimestamp().isAfter(monthAgo))
+                .mapToDouble(t -> t.getPrice() * t.getQuantity()).sum();
+        tableFooterTurnoverLbl.setText(String.format(Locale.US, "Portfolio Turnover (30d): %.1f%%",
+                netWorth > 0 ? traded / netWorth * 100 : 0));
         tableFooterMarginLbl.setText(String.format("Unrealized: %s   ·   Realized: %s",
                 Formatter.signedMoney(pnl), Formatter.signedMoney(realized)));
 
@@ -721,17 +815,14 @@ public class PortfolioPanel extends BasePanel {
         sectorCard.updateData(rows, totalMktVal);
 
         // 8. Update Analytical Grid Card & Health Card
-        analyticalCard.updateData(rows);
+        analyticalCard.updateData(rows, analytics != null ? analytics.getReport(user) : null);
         healthScoreCard.updateData(rows, totalMktVal);
 
         // 9. Update Periodic P&L
-        periodicPnlCard.updateData(todayPnl, pnl);
+        periodicPnlCard.updateData(todayPnl, netWorth, curve, startingCash, realized, rows);
 
         // 10. Update Recent Activity
-        if (tradingService != null) {
-            List<Transaction> txs = tradingService.getTransactionHistory(user);
-            recentActivityCard.updateTransactions(txs);
-        }
+        recentActivityCard.updateTransactions(txHistory);
     }
 
     private double calculateTodayPnl(User user) {
@@ -891,21 +982,29 @@ public class PortfolioPanel extends BasePanel {
         JPanel slidersPanel = new JPanel(new GridLayout(4, 1, 6, 8));
         slidersPanel.setOpaque(false);
 
-        JSlider sIndian = createSlider(60);
-        JSlider sUs = createSlider(20);
-        JSlider sCrypto = createSlider(10);
-        JSlider sCash = createSlider(10);
+        // current allocation in USD: {Indian, US, Crypto, Cash}
+        double[] now = currentAllocation();
+        double total = Math.max(1, now[0] + now[1] + now[2] + now[3]);
+        int[] pct = new int[4];
+        for (int i = 0; i < 4; i++) {
+            pct[i] = (int) Math.round(now[i] / total * 100);
+        }
+        pct[3] += 100 - (pct[0] + pct[1] + pct[2] + pct[3]);   // rounding fix so they add up to 100
+        JSlider sIndian = createSlider(pct[0]);
+        JSlider sUs = createSlider(pct[1]);
+        JSlider sCrypto = createSlider(pct[2]);
+        JSlider sCash = createSlider(pct[3]);
 
-        slidersPanel.add(buildSliderRow("Indian Equities (NSE/BSE)", sIndian, "60%"));
-        slidersPanel.add(buildSliderRow("US Tech & AI (NASDAQ)", sUs, "20%"));
-        slidersPanel.add(buildSliderRow("Cryptocurrency (Spot)", sCrypto, "10%"));
-        slidersPanel.add(buildSliderRow("Liquid Cash Buffer", sCash, "10%"));
+        slidersPanel.add(buildSliderRow("Indian Equities (NSE/BSE)", sIndian, pct[0] + "%"));
+        slidersPanel.add(buildSliderRow("US Stocks & ETFs", sUs, pct[1] + "%"));
+        slidersPanel.add(buildSliderRow("Cryptocurrency (Spot)", sCrypto, pct[2] + "%"));
+        slidersPanel.add(buildSliderRow("Liquid Cash Buffer", sCash, pct[3] + "%"));
         p.add(slidersPanel, BorderLayout.CENTER);
 
         // Footer Actions
         JPanel ftr = new JPanel(new BorderLayout());
         ftr.setOpaque(false);
-        JLabel note = new JLabel("Calculates proportional units using current market bid/ask spreads.");
+        JLabel note = new JLabel("Sliders start at your current allocation (live prices).");
         note.setFont(Theme.MICRO);
         note.setForeground(Theme.TXT_MUTED);
         ftr.add(note, BorderLayout.WEST);
@@ -922,14 +1021,23 @@ public class PortfolioPanel extends BasePanel {
                         "Weights Mismatch", JOptionPane.WARNING_MESSAGE);
                 return;
             }
-            JOptionPane.showMessageDialog(dialog,
-                    "Rebalance Optimization Results:\n"
-                            + "• Indian Equities Target: " + sIndian.getValue() + "%\n"
-                            + "• US Tech Target: " + sUs.getValue() + "%\n"
-                            + "• Crypto Target: " + sCrypto.getValue() + "%\n"
-                            + "• Cash Reserve Target: " + sCash.getValue() + "%\n\n"
-                            + "Portfolio Drift is within 2.4% tolerance. No urgent rebalancing liquidation required.",
-                    "Rebalance Simulated", JOptionPane.INFORMATION_MESSAGE);
+            String[] names = {"Indian Equities", "US Stocks & ETFs", "Crypto", "Cash"};
+            int[] target = {sIndian.getValue(), sUs.getValue(), sCrypto.getValue(), sCash.getValue()};
+            StringBuilder sb = new StringBuilder("Orders needed to reach the target (net worth "
+                    + Formatter.money(total) + "):\n\n");
+            double maxDrift = 0;
+            for (int i = 0; i < 4; i++) {
+                double diff = total * target[i] / 100.0 - now[i];
+                maxDrift = Math.max(maxDrift, Math.abs(now[i] / total * 100 - target[i]));
+                String action = i == 3 ? (diff >= 0 ? "Raise cash by " : "Deploy cash ")
+                        : (diff >= 0 ? "BUY " : "SELL ");
+                sb.append(String.format(Locale.US, "• %s: now %.1f%% → target %d%%  ·  %s%s%n",
+                        names[i], now[i] / total * 100, target[i], Math.abs(diff) < 1 ? "no change" : action,
+                        Math.abs(diff) < 1 ? "" : Formatter.money(Math.abs(diff))));
+            }
+            sb.append(String.format(Locale.US, "%nLargest drift: %.1f%%%s", maxDrift,
+                    maxDrift < 5 ? " (within a 5% tolerance)" : " (rebalancing recommended)"));
+            JOptionPane.showMessageDialog(dialog, sb.toString(), "Rebalance Simulated", JOptionPane.INFORMATION_MESSAGE);
         });
         JButton btnClose = new JButton("Close");
         btnClose.setBackground(Theme.SURFACE_SUB);
@@ -942,6 +1050,22 @@ public class PortfolioPanel extends BasePanel {
         p.add(ftr, BorderLayout.SOUTH);
         dialog.setContentPane(p);
         dialog.setVisible(true);
+    }
+
+    /** Current value in USD of {Indian stocks, US stocks/ETFs, crypto, cash}. */
+    private double[] currentAllocation() {
+        double[] out = new double[4];
+        User user = authService.getCurrentUser();
+        if (user == null) {
+            return out;
+        }
+        for (Holding h : user.getPortfolio().getHoldings()) {
+            double price = marketService.findBySymbol(h.getSymbol()).map(Asset::getPrice).orElse(h.getAverageCost());
+            int bucket = isIndianAsset(h.getSymbol()) ? 0 : isCryptoAsset(h.getSymbol()) ? 2 : 1;
+            out[bucket] += price * h.getQuantity();
+        }
+        out[3] = user.getAccount().getBalance();
+        return out;
     }
 
     private JSlider createSlider(int val) {
@@ -1456,12 +1580,12 @@ public class PortfolioPanel extends BasePanel {
             add(alertLbl, BorderLayout.EAST);
         }
 
-        public void updateHolding(HoldingRowData r) {
+        public void updateHolding(HoldingRowData r, String firstBuy, String lastTrade) {
             boolean indian = isIndianAsset(r.symbol());
             String cur = indian ? "₹" : "$";
 
-            purchasedLbl.setText("<html><font color='#64748B'>First Purchased: </font><b>14 Aug 2024</b></html>");
-            executedLbl.setText("<html><font color='#64748B'>Last Executed: </font><b>2 days ago</b></html>");
+            purchasedLbl.setText("<html><font color='#64748B'>First Purchased: </font><b>" + firstBuy + "</b></html>");
+            executedLbl.setText("<html><font color='#64748B'>Last Executed: </font><b>" + lastTrade + "</b></html>");
 
             double realized = r.realizedPnl();
             realizedPnlLbl.setText(String.format(Locale.US, "<html><font color='#64748B'>Realized P&L: </font><font color='%s'><b>%s%s%,.2f</b></font></html>",
@@ -1469,12 +1593,17 @@ public class PortfolioPanel extends BasePanel {
             weightLbl.setText(String.format(Locale.US, "<html><font color='#64748B'>Portfolio Weight: </font><b>%.2f%%</b></html>", r.portfolioWeight()));
             sectorLbl.setText("<html><font color='#64748B'>Sector: </font><font color='#3B82F6'><b>" + r.sector() + "</b></font></html>");
 
-            if (r.pnlVal() >= 0) {
-                alertLbl.setForeground(Theme.GAIN);
-                alertLbl.setText("▲ Bullish Breakout Above 50 DMA");
+            // real signal: is the price above or below the average of its recent prices?
+            List<Double> hist = r.trendHistory();
+            if (hist == null || hist.size() < 5) {
+                alertLbl.setForeground(Theme.TXT_MUTED);
+                alertLbl.setText("Collecting price history...");
             } else {
-                alertLbl.setForeground(Theme.LOSS);
-                alertLbl.setText("▼ Testing Key Support Channel");
+                double avg = hist.stream().mapToDouble(Double::doubleValue).average().orElse(r.cmp());
+                boolean above = r.cmp() >= avg;
+                alertLbl.setForeground(above ? Theme.GAIN : Theme.LOSS);
+                alertLbl.setText(String.format(Locale.US, "%s %.2f%% %s its %d-tick average", above ? "▲" : "▼",
+                        Math.abs((r.cmp() - avg) / avg * 100), above ? "above" : "below", hist.size()));
             }
         }
     }
@@ -1489,6 +1618,12 @@ public class PortfolioPanel extends BasePanel {
         private final JLabel mainValLbl = new JLabel("₹0.00");
         private final JLabel usdValLbl = new JLabel("≈ $0.00 USD");
         private final JLabel deltaLbl = new JLabel("▲ +₹0.00");
+        private List<Double> series = List.of();
+
+        void setSeries(List<Double> values) {
+            series = values;
+            repaint();
+        }
 
         public ValueKpiCard(String title, boolean hasAreaSpark) {
             setLayout(new BorderLayout(0, 4));
@@ -1543,24 +1678,9 @@ public class PortfolioPanel extends BasePanel {
                         super.paintComponent(g);
                         Graphics2D g2 = (Graphics2D) g.create();
                         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                        int w = getWidth();
-                        int h = getHeight();
-                        Path2D p = new Path2D.Double();
-                        p.moveTo(0, h * 0.85);
-                        p.curveTo(w * 0.3, h * 0.75, w * 0.6, h * 0.35, w, h * 0.15);
-
-                        Path2D area = new Path2D.Double(p);
-                        area.lineTo(w, h);
-                        area.lineTo(0, h);
-                        area.closePath();
-
-                        GradientPaint gp = new GradientPaint(0, 0, new Color(34, 197, 94, 60), 0, h, new Color(34, 197, 94, 0));
-                        g2.setPaint(gp);
-                        g2.fill(area);
-
-                        g2.setColor(Theme.GAIN);
-                        g2.setStroke(new BasicStroke(1.8f));
-                        g2.draw(p);
+                        // real account values over time (from the saved equity history)
+                        boolean up = series.size() < 2 || series.get(series.size() - 1) >= series.get(0);
+                        drawSeries(g2, series, getWidth(), getHeight(), up ? Theme.GAIN : Theme.LOSS, true);
                         g2.dispose();
                     }
                 };
@@ -1658,7 +1778,13 @@ public class PortfolioPanel extends BasePanel {
         private final JLabel titleLbl = new JLabel();
         private final JLabel badgeLbl = new JLabel("", SwingConstants.CENTER);
         private final JLabel valLbl = new JLabel("+₹0.00");
-        private final JLabel subLbl = new JLabel("+0.00% Over Inception");
+        private final JLabel subLbl = new JLabel("+0.00%");
+        private List<Double> series = List.of();
+
+        void setSeries(List<Double> values) {
+            series = values;
+            repaint();
+        }
 
         public SparkKpiCard(String title, String badge) {
             setLayout(new BorderLayout(0, 4));
@@ -1702,14 +1828,7 @@ public class PortfolioPanel extends BasePanel {
                     super.paintComponent(g);
                     Graphics2D g2 = (Graphics2D) g.create();
                     g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                    int w = getWidth();
-                    int h = getHeight();
-                    g2.setColor(valLbl.getForeground());
-                    g2.setStroke(new BasicStroke(1.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                    Path2D p = new Path2D.Double();
-                    p.moveTo(0, h * 0.8);
-                    p.curveTo(w * 0.35, h * 0.85, w * 0.65, h * 0.25, w, h * 0.15);
-                    g2.draw(p);
+                    drawSeries(g2, series, getWidth(), getHeight(), valLbl.getForeground(), false);
                     g2.dispose();
                 }
             };
@@ -1718,13 +1837,13 @@ public class PortfolioPanel extends BasePanel {
             add(spark, BorderLayout.SOUTH);
         }
 
-        public void updateValues(double pnlUsd, double pct) {
+        public void updateValues(double pnlUsd, double pct, String basis) {
             double pnlInr = pnlUsd * USD_TO_INR;
             String sign = pnlInr >= 0 ? "+" : "-";
             Color c = pnlInr >= 0 ? Theme.GAIN : Theme.LOSS;
             valLbl.setText(String.format(Locale.US, "%s₹%,.2f", sign, Math.abs(pnlInr)));
             valLbl.setForeground(c);
-            subLbl.setText(String.format(Locale.US, "%s%.2f%% vs Benchmark", sign, Math.abs(pct)));
+            subLbl.setText(String.format(Locale.US, "%s%.2f%% %s", sign, Math.abs(pct), basis));
             subLbl.setForeground(c);
             repaint();
         }
@@ -2173,19 +2292,21 @@ public class PortfolioPanel extends BasePanel {
     // =========================================================================
 
     private static class AnalyticalGridCard extends JPanel {
-        private final JLabel bestSymLbl = new JLabel("NVDA");
-        private final JLabel bestValLbl = new JLabel("+20.39% (+₹1,46,328)");
-        private final JLabel bestNoteLbl = new JLabel("Semiconductor momentum");
+        private final JLabel bestSymLbl = new JLabel("-");
+        private final JLabel bestValLbl = new JLabel("No open positions");
+        private final JLabel bestNoteLbl = new JLabel(" ");
 
-        private final JLabel worstSymLbl = new JLabel("TSLA");
-        private final JLabel worstValLbl = new JLabel("-4.87% (-₹32,292)");
-        private final JLabel worstNoteLbl = new JLabel("EV valuation compression");
+        private final JLabel worstSymLbl = new JLabel("-");
+        private final JLabel worstValLbl = new JLabel("No open positions");
+        private final JLabel worstNoteLbl = new JLabel(" ");
 
-        private final JLabel winRatioLbl = new JLabel("70.0%");
-        private final JLabel winSubLbl = new JLabel("7 Gainers / 3 Losers");
+        private final JLabel winRatioLbl = new JLabel("-");
+        private final JLabel winSubLbl = new JLabel("0 Gainers / 0 Losers");
+        private final JLabel profitFactorLbl = new JLabel("Profit factor: N/A");
 
-        private final JLabel betaLbl = new JLabel("1.08 Beta");
-        private final JLabel betaSubLbl = new JLabel("Max Drawdown: -4.2%");
+        private final JLabel betaLbl = new JLabel("Sharpe N/A");
+        private final JLabel betaSubLbl = new JLabel("Max Drawdown: N/A");
+        private final JLabel riskNoteLbl = new JLabel("Sortino: N/A");
 
         public AnalyticalGridCard() {
             setLayout(new GridLayout(2, 2, 10, 10));
@@ -2193,8 +2314,8 @@ public class PortfolioPanel extends BasePanel {
 
             add(buildCard("TOP ALPHA ASSET", bestSymLbl, bestValLbl, bestNoteLbl, Theme.GAIN, "rocket_launch"));
             add(buildCard("MAX DRAG ASSET", worstSymLbl, worstValLbl, worstNoteLbl, Theme.LOSS, "south_east"));
-            add(buildCard("POSITION WIN RATIO", winRatioLbl, winSubLbl, new JLabel("Profit factor: 2.84x"), Theme.ACCENT, "pie_chart"));
-            add(buildCard("VOLATILITY & RISK", betaLbl, betaSubLbl, new JLabel("Moderate Market Correlation"), Theme.ACCENT, "show_chart"));
+            add(buildCard("POSITION WIN RATIO", winRatioLbl, winSubLbl, profitFactorLbl, Theme.ACCENT, "pie_chart"));
+            add(buildCard("VOLATILITY & RISK", betaLbl, betaSubLbl, riskNoteLbl, Theme.ACCENT, "show_chart"));
         }
 
         private JPanel buildCard(String title, JLabel hero, JLabel sub1, JLabel sub2, Color accent, String icon) {
@@ -2234,19 +2355,35 @@ public class PortfolioPanel extends BasePanel {
             return card;
         }
 
-        public void updateData(List<HoldingRowData> rows) {
-            if (rows.isEmpty()) return;
+        public void updateData(List<HoldingRowData> rows, com.papertrader.analytics.PerformanceReport report) {
+            if (report != null) {
+                // risk numbers from the saved equity history and closed trades (AnalyticsService)
+                betaLbl.setText("Sharpe " + com.papertrader.analytics.PerformanceAnalyzer.format(report.sharpeRatio(), ""));
+                betaSubLbl.setText("Max Drawdown: " + com.papertrader.analytics.PerformanceAnalyzer.format(-report.maxDrawdownPercent(), "%"));
+                riskNoteLbl.setText("Sortino: " + com.papertrader.analytics.PerformanceAnalyzer.format(report.sortinoRatio(), "")
+                        + " · " + report.closedTrades() + " closed trades");
+                profitFactorLbl.setText("Profit factor: " + com.papertrader.analytics.PerformanceAnalyzer.format(report.profitFactor(), "x"));
+            }
+            if (rows.isEmpty()) {
+                bestSymLbl.setText("-");
+                bestValLbl.setText("No open positions");
+                worstSymLbl.setText("-");
+                worstValLbl.setText("No open positions");
+                winRatioLbl.setText("-");
+                winSubLbl.setText("0 Gainers / 0 Losers");
+                return;
+            }
 
             HoldingRowData best = Collections.max(rows, Comparator.comparingDouble(HoldingRowData::pnlPct));
             HoldingRowData worst = Collections.min(rows, Comparator.comparingDouble(HoldingRowData::pnlPct));
 
             bestSymLbl.setText(best.symbol());
-            bestValLbl.setText(String.format(Locale.US, "%+.2f%% (+₹%,.0f)", best.pnlPct(), Math.abs(best.pnlVal() * USD_TO_INR)));
-            bestNoteLbl.setText(best.name() + " momentum");
+            bestValLbl.setText(String.format(Locale.US, "%+.2f%% (%s₹%,.0f)", best.pnlPct(), best.pnlVal() >= 0 ? "+" : "-", Math.abs(best.pnlVal() * USD_TO_INR)));
+            bestNoteLbl.setText(best.name() + " · " + String.format(Locale.US, "%.1f%% of portfolio", best.portfolioWeight()));
 
             worstSymLbl.setText(worst.symbol());
-            worstValLbl.setText(String.format(Locale.US, "%+.2f%% (-₹%,.0f)", worst.pnlPct(), Math.abs(worst.pnlVal() * USD_TO_INR)));
-            worstNoteLbl.setText(worst.name() + " compression");
+            worstValLbl.setText(String.format(Locale.US, "%+.2f%% (%s₹%,.0f)", worst.pnlPct(), worst.pnlVal() >= 0 ? "+" : "-", Math.abs(worst.pnlVal() * USD_TO_INR)));
+            worstNoteLbl.setText(worst.name() + " · " + String.format(Locale.US, "%.1f%% of portfolio", worst.portfolioWeight()));
 
             long gainers = rows.stream().filter(r -> r.pnlVal() >= 0).count();
             long losers = rows.size() - gainers;
@@ -2261,10 +2398,12 @@ public class PortfolioPanel extends BasePanel {
     // =========================================================================
 
     private static class HealthScoreCard extends JPanel {
-        private final JLabel badgeLbl = new JLabel("68 / 100 · MODERATE RISK");
+        private final JLabel badgeLbl = new JLabel("- / 100 · NO POSITIONS");
+        private final JLabel divValLbl = new JLabel("N/A");
+        private final JLabel capValLbl = new JLabel("N/A");
         private final JProgressBar divBar = new JProgressBar(0, 100);
         private final JProgressBar capBar = new JProgressBar(0, 100);
-        private final JLabel capDescLbl = new JLabel("Concentration Warning: Top stock accounts for 17.7% of total equity.");
+        private final JLabel capDescLbl = new JLabel("Largest position share of the invested money.");
 
         public HealthScoreCard() {
             setLayout(new BorderLayout(0, 8));
@@ -2300,15 +2439,15 @@ public class PortfolioPanel extends BasePanel {
             JLabel l1 = new JLabel("Diversification Metric");
             l1.setFont(Theme.MICRO);
             l1.setForeground(Theme.TXT_MUTED);
-            JLabel v1 = new JLabel("84/100 (Optimal)");
+            JLabel v1 = divValLbl;
             v1.setFont(Theme.MICRO);
             v1.setForeground(Theme.GAIN);
-            divBar.setValue(84);
+            divBar.setValue(0);
             divBar.setForeground(Theme.GAIN);
             divBar.setBackground(Theme.SIDEBAR_BG);
             divBar.setPreferredSize(new Dimension(100, 4));
             divBar.setBorderPainted(false);
-            JLabel d1 = new JLabel("Multi-asset allocation shields against single-sector contagion.");
+            JLabel d1 = new JLabel("Score from position weights (1 - sum of squared weights).");
             d1.setFont(Theme.TINY);
             d1.setForeground(Theme.TXT_MUTED);
             m1.add(l1);
@@ -2327,10 +2466,10 @@ public class PortfolioPanel extends BasePanel {
             JLabel l2 = new JLabel("Single Stock Cap");
             l2.setFont(Theme.MICRO);
             l2.setForeground(Theme.TXT_MUTED);
-            JLabel v2 = new JLabel("17.7% Peak");
+            JLabel v2 = capValLbl;
             v2.setFont(Theme.MICRO);
             v2.setForeground(new Color(0xFF, 0xB4, 0xAB));
-            capBar.setValue(68);
+            capBar.setValue(0);
             capBar.setForeground(new Color(0x93, 0x00, 0x0A));
             capBar.setBackground(Theme.SIDEBAR_BG);
             capBar.setPreferredSize(new Dimension(100, 4));
@@ -2354,8 +2493,27 @@ public class PortfolioPanel extends BasePanel {
         }
 
         public void updateData(List<HoldingRowData> rows, double totalMktVal) {
-            if (rows.isEmpty()) return;
+            if (rows.isEmpty()) {
+                badgeLbl.setText("- / 100 · NO POSITIONS");
+                divValLbl.setText("N/A");
+                capValLbl.setText("N/A");
+                divBar.setValue(0);
+                capBar.setValue(0);
+                return;
+            }
             HoldingRowData top = Collections.max(rows, Comparator.comparingDouble(HoldingRowData::portfolioWeight));
+            // Diversification = 1 - Herfindahl index (sum of squared weights): 1 stock = 0, 10 equal stocks = 90
+            double hhi = 0;
+            for (HoldingRowData row : rows) {
+                hhi += Math.pow(row.portfolioWeight() / 100.0, 2);
+            }
+            int div = (int) Math.round((1 - hhi) * 100);
+            int health = (int) Math.round(div * 0.6 + Math.max(0, 100 - top.portfolioWeight() * 2) * 0.4);
+            divValLbl.setText(div + "/100 " + (div >= 75 ? "(Optimal)" : div >= 50 ? "(Fair)" : "(Concentrated)"));
+            divValLbl.setForeground(div >= 75 ? Theme.GAIN : div >= 50 ? Theme.WARNING : Theme.LOSS);
+            divBar.setValue(div);
+            badgeLbl.setText(health + " / 100 · " + (health >= 75 ? "LOW RISK" : health >= 50 ? "MODERATE RISK" : "HIGH RISK"));
+            capValLbl.setText(String.format(Locale.US, "%.1f%% Peak", top.portfolioWeight()));
             capDescLbl.setText(String.format(Locale.US, "Concentration Warning: %s accounts for %.1f%% of total equity.", top.symbol(), top.portfolioWeight()));
             capBar.setValue((int) Math.min(100, top.portfolioWeight() * 3));
         }
@@ -2366,14 +2524,16 @@ public class PortfolioPanel extends BasePanel {
     // =========================================================================
 
     private static class PeriodicPnlCard extends JPanel {
-        private final JLabel dayVal = new JLabel("+₹1,03,910");
-        private final JLabel dayPct = new JLabel("▲ +1.25%");
-        private final JLabel weekVal = new JLabel("+₹2,45,200");
-        private final JLabel weekPct = new JLabel("▲ +3.04%");
-        private final JLabel monthVal = new JLabel("+₹5,12,840");
-        private final JLabel monthPct = new JLabel("▲ +6.58%");
-        private final JLabel yearVal = new JLabel("+₹7,54,557");
-        private final JLabel yearPct = new JLabel("▲ +9.99%");
+        private final JLabel dayVal = new JLabel("₹0");
+        private final JLabel dayPct = new JLabel("0.00%");
+        private final JLabel weekVal = new JLabel("₹0");
+        private final JLabel weekPct = new JLabel("0.00%");
+        private final JLabel monthVal = new JLabel("₹0");
+        private final JLabel monthPct = new JLabel("0.00%");
+        private final JLabel yearVal = new JLabel("₹0");
+        private final JLabel yearPct = new JLabel("0.00%");
+        private final JButton realizedBtn = new JButton("Realized (₹0)");
+        private final JLabel taxLbl = new JLabel("No positions at a loss");
 
         public PeriodicPnlCard() {
             setLayout(new BorderLayout(0, 10));
@@ -2401,7 +2561,7 @@ public class PortfolioPanel extends BasePanel {
             JPanel toggles = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
             toggles.setBackground(Theme.SIDEBAR_BG);
             toggles.setBorder(BorderFactory.createEmptyBorder(2, 2, 2, 2));
-            JButton b1 = new JButton("Realized (₹2.4L)");
+            JButton b1 = realizedBtn;
             b1.setFont(Theme.MICRO);
             b1.setBackground(Theme.SIDEBAR_BG);
             b1.setForeground(Theme.TXT_MUTED);
@@ -2424,7 +2584,7 @@ public class PortfolioPanel extends BasePanel {
             grid.add(buildPeriodTile("Day Return", dayVal, dayPct));
             grid.add(buildPeriodTile("1 Week", weekVal, weekPct));
             grid.add(buildPeriodTile("1 Month", monthVal, monthPct));
-            grid.add(buildPeriodTile("All-Time 1Y", yearVal, yearPct));
+            grid.add(buildPeriodTile("All-Time", yearVal, yearPct));
             add(grid, BorderLayout.CENTER);
 
             // Bottom Tax-loss harvesting strip
@@ -2437,7 +2597,7 @@ public class PortfolioPanel extends BasePanel {
             JLabel t1 = new JLabel("Tax Loss Harvesting Eligible:");
             t1.setFont(Theme.MICRO);
             t1.setForeground(Theme.TXT_MUTED);
-            JLabel t2 = new JLabel("-₹67,814 Available offset in TSLA & ETH");
+            JLabel t2 = taxLbl;
             t2.setFont(new Font("Inter", Font.BOLD, 10));
             t2.setForeground(Theme.LOSS);
             taxStrip.add(t1, BorderLayout.WEST);
@@ -2467,18 +2627,60 @@ public class PortfolioPanel extends BasePanel {
             return p;
         }
 
-        public void updateData(double todayPnlUsd, double totalPnlUsd) {
-            double todayInr = todayPnlUsd * USD_TO_INR;
-            double totalInr = totalPnlUsd * USD_TO_INR;
+        /**
+         * Real period P&L: net worth now minus net worth at the start of the period (from the saved
+         * equity history). All-time is measured from the starting cash.
+         */
+        public void updateData(double todayPnlUsd, double netWorth, List<com.papertrader.analytics.EquityPoint> curve,
+                               double startingCash, double realizedUsd, List<HoldingRowData> rows) {
+            long now = System.currentTimeMillis();
+            setTile(dayVal, dayPct, todayPnlUsd, netWorth - todayPnlUsd);
+            double weekStart = valueAt(curve, now - 7 * 86_400_000L, startingCash);
+            setTile(weekVal, weekPct, netWorth - weekStart, weekStart);
+            double monthStart = valueAt(curve, now - 30 * 86_400_000L, startingCash);
+            setTile(monthVal, monthPct, netWorth - monthStart, monthStart);
+            setTile(yearVal, yearPct, netWorth - startingCash, startingCash);
 
-            dayVal.setText(String.format(Locale.US, "%s₹%,.0f", todayInr >= 0 ? "+" : "-", Math.abs(todayInr)));
-            dayVal.setForeground(todayInr >= 0 ? Theme.GAIN : Theme.LOSS);
+            realizedBtn.setText("Realized (" + inr(realizedUsd) + ")");
 
-            weekVal.setText(String.format(Locale.US, "%s₹%,.0f", totalInr * 0.35 >= 0 ? "+" : "-", Math.abs(totalInr * 0.35)));
-            monthVal.setText(String.format(Locale.US, "%s₹%,.0f", totalInr * 0.65 >= 0 ? "+" : "-", Math.abs(totalInr * 0.65)));
+            // tax-loss harvesting: open positions currently at a loss could be sold to offset gains
+            double loss = 0;
+            List<String> names = new ArrayList<>();
+            for (HoldingRowData row : rows) {
+                if (row.pnlVal() < 0) {
+                    loss += row.pnlVal();
+                    names.add(row.symbol());
+                }
+            }
+            taxLbl.setText(names.isEmpty() ? "No positions at a loss"
+                    : inr(loss) + " available offset in " + String.join(" & ", names.subList(0, Math.min(3, names.size())))
+                    + (names.size() > 3 ? " +" + (names.size() - 3) : ""));
+        }
 
-            yearVal.setText(String.format(Locale.US, "%s₹%,.0f", totalInr >= 0 ? "+" : "-", Math.abs(totalInr)));
-            yearVal.setForeground(totalInr >= 0 ? Theme.GAIN : Theme.LOSS);
+        /** Net worth at a past time: last saved point at/before it, else the oldest point, else the fallback. */
+        private static double valueAt(List<com.papertrader.analytics.EquityPoint> curve, long time, double fallback) {
+            double v = curve.isEmpty() ? fallback : curve.get(0).value();
+            for (com.papertrader.analytics.EquityPoint ep : curve) {
+                if (ep.time() > time) {
+                    break;
+                }
+                v = ep.value();
+            }
+            return v;
+        }
+
+        private static String inr(double usd) {
+            double v = usd * USD_TO_INR;
+            return String.format(Locale.US, "%s₹%,.0f", v >= 0 ? "+" : "-", Math.abs(v));
+        }
+
+        private static void setTile(JLabel val, JLabel pct, double changeUsd, double baseUsd) {
+            Color c = changeUsd >= 0 ? Theme.GAIN : Theme.LOSS;
+            val.setText(inr(changeUsd));
+            val.setForeground(c);
+            double p = baseUsd > 0 ? changeUsd / baseUsd * 100 : 0;
+            pct.setText(String.format(Locale.US, "%s %+.2f%%", changeUsd >= 0 ? "▲" : "▼", p));
+            pct.setForeground(c);
         }
     }
 
@@ -2532,11 +2734,10 @@ public class PortfolioPanel extends BasePanel {
         public void updateTransactions(List<Transaction> txs) {
             listContainer.removeAll();
             if (txs == null || txs.isEmpty()) {
-                // Show default simulated executions matching the HTML mockup
-                listContainer.add(buildTxItem("BUY", "RELIANCE", 50, 2940.0, "NSE Clearing", "Today, 11:24 IST", true));
-                listContainer.add(buildTxItem("BUY", "NVDA", 15, 135.20, "NASDAQ", "Yesterday", false));
-                listContainer.add(buildTxItem("SELL", "TSLA", 10, 254.00, "NASDAQ", "3 days ago", false));
-                listContainer.add(buildTxItem("BUY", "TCS", 20, 4280.0, "NSE Clearing", "04 Oct 2024", true));
+                JLabel empty = new JLabel("No trades yet. Your executed orders will appear here.");
+                empty.setFont(Theme.MICRO);
+                empty.setForeground(Theme.TXT_MUTED);
+                listContainer.add(empty);
             } else {
                 int count = Math.min(4, txs.size());
                 for (int i = txs.size() - 1; i >= txs.size() - count; i--) {
