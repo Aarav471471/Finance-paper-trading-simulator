@@ -1,0 +1,47 @@
+@startuml sequence-diagram
+title Paper Trading Simulator - Sequence Diagram: "Place a Buy Order"
+skinparam shadowing false
+autonumber
+actor Trader
+participant "TradePanel\n(Swing UI)" as UI
+participant "TradingService" as TS
+participant "order : Order\n(Market/Limit/Stop)" as O
+participant "FeeCalculator" as FC
+participant "Account" as ACC
+participant "Portfolio" as PF
+participant "TransactionRepository" as TR
+participant "Repository<User>" as UR
+
+Trader -> UI : choose asset, BUY, type, qty\nclick "Place order"
+UI -> TS : placeOrder(user, asset, BUY, qty [, price])
+TS -> O ** : new MarketOrder / LimitOrder / StopLossOrder
+TS -> O : canExecute(currentPrice)
+note right of O : runtime polymorphism:\nsubclass decides
+
+alt condition met
+  TS -> FC : calculateFee(price x qty)
+  FC --> TS : fee
+  TS -> ACC : withdraw(value + fee)
+  alt not enough cash
+    ACC --> TS : InsufficientFundsException
+    TS --> UI : exception
+    UI --> Trader : error dialog
+  else enough cash
+    TS -> PF : addUnits(symbol, qty, price)
+    TS -> O : markFilled(price)
+    TS -> TR : save(new Transaction)
+    TS -> UR : save(user)
+    TS --> UI : order (FILLED)
+    UI --> Trader : "Order filled" dialog
+  end
+else condition not met
+  TS -> TS : pendingOrders.put(order, user)
+  TS --> UI : order (PENDING)
+  UI --> Trader : "Order is waiting" dialog
+  ...later, every price tick...
+  participant "SimulatedPriceFeed" as Feed
+  Feed -> TS : onPriceUpdate(asset, old, new)
+  TS -> O : canExecute(new)
+  TS -> TS : execute(user, order)\n(same steps as above)
+end
+@enduml
