@@ -44,6 +44,11 @@ public class Portfolio {
         return new ArrayList<>(holdings.values());
     }
 
+    /** Removes every holding (used by "Reset account"). */
+    public void clear() {
+        holdings.clear();
+    }
+
     public boolean isEmpty() {
         return holdings.isEmpty();
     }

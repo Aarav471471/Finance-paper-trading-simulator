@@ -45,6 +45,15 @@ public class InMemoryTransactionRepository implements TransactionRepository {
 
     @Override
     public int nextId() {
-        return transactions.size() + 1;
+        int max = 0;
+        for (Transaction t : transactions) {
+            max = Math.max(max, t.getId());
+        }
+        return max + 1;
+    }
+
+    @Override
+    public void deleteByUsername(String username) {
+        transactions.removeIf(t -> t.getUsername().equalsIgnoreCase(username));
     }
 }

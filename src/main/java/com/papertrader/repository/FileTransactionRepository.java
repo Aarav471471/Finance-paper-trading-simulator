@@ -40,13 +40,28 @@ public class FileTransactionRepository extends InMemoryTransactionRepository {
         }
     }
 
+    @Override
+    public void deleteByUsername(String username) {
+        super.deleteByUsername(username);
+        List<String> lines = new java.util.ArrayList<>();
+        for (Transaction t : findAll()) {
+            lines.add(t.toCsvRow());
+        }
+        try {
+            Files.write(file, lines, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Could not rewrite transactions", e);
+        }
+    }
+
     private void loadFromDisk() throws IOException {
         for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
             String[] p = line.split(",");
-            if (p.length == 9) {
+            if (p.length >= 9) {   // files from older versions have 9 columns (no realised P&L)
+                double realized = p.length >= 10 ? Double.parseDouble(p[9]) : 0;
                 super.save(new Transaction(Integer.parseInt(p[0]), p[1], LocalDateTime.parse(p[2]), p[3],
                         OrderSide.valueOf(p[4]), p[5], Integer.parseInt(p[6]),
-                        Double.parseDouble(p[7]), Double.parseDouble(p[8])));
+                        Double.parseDouble(p[7]), Double.parseDouble(p[8]), realized));
             }
         }
     }

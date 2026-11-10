@@ -51,6 +51,14 @@ public abstract class Order {
     /** Short description of the condition, e.g. "at market" or "when price <= $180.00". */
     public abstract String getConditionText();
 
+    /**
+     * Last chance for an order type to change its fill price. Most orders accept the price
+     * the market gives them; LimitOrder overrides this so it never fills worse than its limit.
+     */
+    public double adjustFillPrice(double fillPrice) {
+        return fillPrice;
+    }
+
     // ---- state changes (only the order itself can change its status: encapsulation) ----
 
     public void markFilled(double price) {

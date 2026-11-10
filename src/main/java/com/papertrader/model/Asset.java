@@ -38,6 +38,9 @@ public abstract class Asset {
     /** How much the price moves on each tick of the simulator (0.01 = about 1%). */
     public abstract double getVolatility();
 
+    /** Typical bid/ask spread in percent of price (e.g. 0.02 = 0.02%). Less liquid assets have wider spreads. */
+    public abstract double getSpreadPercent();
+
     // ---- Getters / setters (encapsulation) ----
 
     public String getSymbol() {
@@ -68,6 +71,16 @@ public abstract class Asset {
             throw new IllegalArgumentException("Price must be positive");
         }
         this.price = newPrice;
+    }
+
+    /** Best price a buyer is offering: a little BELOW the last price (half the spread). */
+    public double getBid() {
+        return price * (1 - getSpreadPercent() / 200.0);
+    }
+
+    /** Best price a seller is asking: a little ABOVE the last price (half the spread). */
+    public double getAsk() {
+        return price * (1 + getSpreadPercent() / 200.0);
     }
 
     /** Percentage change since the previous close (like every trading app shows). */

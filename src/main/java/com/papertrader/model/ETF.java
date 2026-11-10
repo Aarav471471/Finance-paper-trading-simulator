@@ -25,6 +25,11 @@ public class ETF extends Asset {
     }
 
     @Override
+    public double getSpreadPercent() {
+        return 0.01;
+    }
+
+    @Override
     public double getVolatility() {
         return 0.002;   // about 0.2% per tick
     }
