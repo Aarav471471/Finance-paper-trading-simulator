@@ -1,6 +1,10 @@
 package com.papertrader.ui;
 
+import com.papertrader.analytics.PerformanceAnalyzer;
+import com.papertrader.analytics.PerformanceReport;
+import com.papertrader.analytics.TradeStats;
 import com.papertrader.model.Asset;
+import com.papertrader.service.AnalyticsService;
 import com.papertrader.model.OrderSide;
 import com.papertrader.model.Transaction;
 import com.papertrader.model.User;
@@ -98,6 +102,9 @@ public class HistoryPanel extends BasePanel {
     private final MarketService marketService;
     private final PortfolioService portfolioService;
     private final Consumer<String> navHandler;
+    private AnalyticsService analytics;
+    private TradeStats stats = TradeStats.of(List.of());
+    private String period = "ALL";
 
     // Six KPI Cards
     private final TotalTradesKpiCard cardTrades = new TotalTradesKpiCard();
@@ -256,13 +263,25 @@ public class HistoryPanel extends BasePanel {
                 BorderFactory.createEmptyBorder(2, 2, 2, 2)
         ));
         String[] periods = {"1W", "1M", "3M", "6M", "1Y", "ALL"};
+        List<JButton> periodButtons = new ArrayList<>();
         for (String p : periods) {
             JButton pb = new JButton(p);
+            periodButtons.add(pb);
+            // the chosen period limits every number and the table on this page
+            pb.addActionListener(e -> {
+                period = p;
+                for (JButton other : periodButtons) {
+                    boolean on = other == pb;
+                    other.setBackground(on ? Theme.ACCENT : Theme.SIDEBAR_BG);
+                    other.setForeground(on ? Color.WHITE : Theme.TXT_MUTED);
+                }
+                refresh();
+            });
             pb.setFont(Theme.MICRO);
             pb.setFocusPainted(false);
             pb.setBorderPainted(false);
             pb.setCursor(new Cursor(Cursor.HAND_CURSOR));
-            if ("3M".equals(p)) {
+            if ("ALL".equals(p)) {
                 pb.setBackground(Theme.ACCENT);
                 pb.setForeground(Color.WHITE);
             } else {
@@ -663,7 +682,18 @@ public class HistoryPanel extends BasePanel {
         if (user == null) return;
 
         List<Transaction> txList = tradingService != null ? tradingService.getTransactionHistory(user) : new ArrayList<>();
+        LocalDateTime cutoff = periodStart();
+        if (cutoff != null) {
+            txList = txList.stream().filter(t -> !t.getTimestamp().isBefore(cutoff)).toList();
+        }
         List<AuditRowData> auditRows = buildAuditRowDataList(txList);
+        if (tradingService != null) {
+            auditRows.addAll(0, buildPendingRows(tradingService.getPendingOrders(user)));
+        }
+        stats = TradeStats.of(txList);
+        double unrealized = portfolioService != null
+                ? portfolioService.getTotalMarketValue(user) - portfolioService.getTotalCostBasis(user) : Double.NaN;
+        PerformanceReport report = analytics != null ? analytics.getReport(user) : null;
 
         // Update Tab Counts
         long pendingCount = auditRows.stream().filter(r -> "PENDING".equalsIgnoreCase(r.status())).count();
@@ -682,35 +712,28 @@ public class HistoryPanel extends BasePanel {
         applyFilters();
 
         // Update 6 KPI Cards
-        cardTrades.updateData(auditRows.size());
-        cardBuys.updateData(auditRows);
-        cardSells.updateData(auditRows);
-        cardRealizedPnl.updateData(auditRows);
-        cardWinRate.updateData(auditRows);
-        cardFees.updateData(auditRows);
+        int pending = (int) pendingCount;
+        cardTrades.updateData(stats, pending);
+        cardBuys.updateData(stats);
+        cardSells.updateData(stats);
+        cardRealizedPnl.updateData(stats, unrealized);
+        cardWinRate.updateData(stats);
+        cardFees.updateData(stats, tradingService != null ? tradingService.getFeeDescription() : "");
 
         // Update Analytics
-        histogramCard.updateData(auditRows);
-        growthCard.updateData(auditRows);
-        donutCard.updateData(auditRows);
+        histogramCard.updateData(stats);
+        growthCard.updateData(stats);
+        donutCard.updateData(stats);
 
         // Update Heatmap & Quant
-        heatmapCard.updateData(auditRows);
-        quantGrid.updateData(auditRows);
+        heatmapCard.updateData(stats);
+        quantGrid.updateData(stats, report);
     }
 
     private List<AuditRowData> buildAuditRowDataList(List<Transaction> txs) {
         List<AuditRowData> rows = new ArrayList<>();
-        if (txs == null || txs.isEmpty()) {
-            // Seed realistic simulation transactions matching user HTML
-            rows.add(new AuditRowData(1, "#ORD-9842", LocalDateTime.now().minusMinutes(12), "RELIANCE", "Reliance Industries Ltd", "NSE", "Equity", "BUY", "Market · CNC", 50, 2945.50, 147275.00, 24500.00, "FILLED"));
-            rows.add(new AuditRowData(2, "#ORD-9841", LocalDateTime.now().minusHours(2), "NVDA", "Nvidia Corporation", "NASDAQ", "Tech", "SELL", "Limit · CNC", 100, 138.45, 13845.00, 318400.00 / USD_TO_INR, "FILLED"));
-            rows.add(new AuditRowData(3, "#ORD-9840", LocalDateTime.now().minusDays(1), "TCS", "Tata Consultancy Services", "NSE", "IT", "BUY", "Limit · MIS 5x", 10, 4280.00, 42800.00, 0.0, "FILLED"));
-            rows.add(new AuditRowData(4, "#ORD-9839", LocalDateTime.now().minusDays(2), "TSLA", "Tesla Inc.", "NASDAQ", "Auto", "SELL", "Stop · CNC", 40, 252.10, 10084.00, -14500.00 / USD_TO_INR, "FILLED"));
-            rows.add(new AuditRowData(5, "#ORD-9838", LocalDateTime.now().minusDays(2), "BTC", "Bitcoin Core", "BINANCE", "Crypto", "BUY", "Limit · Spot", 1, 68420.00, 68420.00, 0.0, "FILLED"));
-            rows.add(new AuditRowData(6, "#ORD-9837", LocalDateTime.now().minusDays(3), "HDFCBANK", "HDFC Bank Ltd", "NSE", "Bank", "BUY", "Limit · CNC", 100, 1640.00, 164000.00, 0.0, "PENDING"));
-            rows.add(new AuditRowData(7, "#ORD-9836", LocalDateTime.now().minusDays(3), "INFY", "Infosys Ltd", "NSE", "IT", "SELL", "Market · MIS", 25, 1890.50, 47262.50, 6400.00, "FILLED"));
-            rows.add(new AuditRowData(8, "#ORD-9835", LocalDateTime.now().minusDays(6), "AAPL", "Apple Inc.", "NASDAQ", "Tech", "BUY", "Limit · CNC", 15, 234.12, 3511.80, 0.0, "FILLED"));
+        if (txs == null) {
+            return rows;
         } else {
             for (int i = 0; i < txs.size(); i++) {
                 Transaction t = txs.get(i);
@@ -725,7 +748,7 @@ public class HistoryPanel extends BasePanel {
                         String.format("#ORD-%04d", t.getId()),
                         t.getTimestamp(),
                         sym,
-                        sym + " Corp",
+                        assetName(sym),
                         ex,
                         cat,
                         t.getSide().name(),
@@ -734,11 +757,49 @@ public class HistoryPanel extends BasePanel {
                         t.getPrice(),
                         gross,
                         pnl,
-                        "FILLED"
+                        "FILLED",
+                        t.getFee()
                 ));
             }
         }
         return rows;
+    }
+
+    /** Start of the selected period (null = all history). */
+    private LocalDateTime periodStart() {
+        LocalDateTime now = LocalDateTime.now();
+        return switch (period) {
+            case "1W" -> now.minusWeeks(1);
+            case "1M" -> now.minusMonths(1);
+            case "3M" -> now.minusMonths(3);
+            case "6M" -> now.minusMonths(6);
+            case "1Y" -> now.minusYears(1);
+            default -> null;
+        };
+    }
+
+    /** Open limit/stop orders, shown as PENDING rows. */
+    private List<AuditRowData> buildPendingRows(List<com.papertrader.model.Order> orders) {
+        List<AuditRowData> rows = new ArrayList<>();
+        for (com.papertrader.model.Order o : orders) {
+            Asset a = o.getAsset();
+            String sym = a.getSymbol();
+            boolean ind = isIndianAsset(sym);
+            rows.add(new AuditRowData(o.getId(), String.format("#ORD-%04d", o.getId()), o.getCreatedAt(), sym, a.getName(),
+                    ind ? "NSE" : (isCryptoAsset(sym) ? "BINANCE" : "NASDAQ"), ind ? "Equity" : (isCryptoAsset(sym) ? "Crypto" : "Tech"),
+                    o.getSide().name(), o.getOrderType() + " · " + o.getConditionText(), o.getQuantity(), a.getPrice(),
+                    a.getPrice() * o.getQuantity(), 0.0, "PENDING", 0.0));
+        }
+        return rows;
+    }
+
+    private String assetName(String sym) {
+        return marketService == null ? sym : marketService.findBySymbol(sym).map(Asset::getName).orElse(sym);
+    }
+
+    /** Gives the page the saved equity history (for the Sharpe ratio). */
+    public void setAnalytics(AnalyticsService analytics) {
+        this.analytics = analytics;
     }
 
     private static boolean isIndianAsset(String sym) {
@@ -857,23 +918,44 @@ public class HistoryPanel extends BasePanel {
         title.setForeground(Theme.TXT_PRIMARY);
         p.add(title, BorderLayout.NORTH);
 
+        // Real numbers from the user's trades. Holding period uses FIFO; rates are India's
+        // equity rules (STCG 20%, LTCG 12.5% above the 1.25 lakh yearly exemption) as an estimate.
+        TradeStats st = stats;
+        java.time.LocalDate today = java.time.LocalDate.now();
+        int fyStart = today.getMonthValue() >= 4 ? today.getYear() : today.getYear() - 1;
+        double stcg = st.shortTermGains * USD_TO_INR;
+        double ltcg = st.longTermGains * USD_TO_INR;
+        double harvest = 0;
+        User u = authService.getCurrentUser();
+        if (u != null && marketService != null) {
+            for (com.papertrader.model.Holding h : u.getPortfolio().getHoldings()) {
+                double price = marketService.findBySymbol(h.getSymbol()).map(Asset::getPrice).orElse(h.getAverageCost());
+                double pl = (price - h.getAverageCost()) * h.getQuantity();
+                if (pl < 0) {
+                    harvest += pl;
+                }
+            }
+        }
+        harvest *= USD_TO_INR;
+        double stcgTax = Math.max(0, stcg) * 0.20;
+        double ltcgTax = Math.max(0, ltcg - 125_000) * 0.125;
+        double feesInr = st.fees * USD_TO_INR;
         StringBuilder sb = new StringBuilder();
-        sb.append("ASSESSMENT YEAR: 2024 - 2025 (FINANCIAL SIMULATION)\n");
+        sb.append(String.format("FINANCIAL YEAR: %d - %d (SIMULATED TRADES)%n", fyStart, fyStart + 1));
         sb.append("--------------------------------------------------------------------------------\n");
-        sb.append("SHORT-TERM CAPITAL GAINS (STCG):      +₹5,82,410.00\n");
-        sb.append("LONG-TERM CAPITAL GAINS (LTCG):       +₹1,72,147.00\n");
-        sb.append("GROSS REALIZED CAPITAL GAINS:         +₹7,54,557.00\n");
-        sb.append("TAX LOSS HARVESTING DEDUCTION:        -₹67,814.00 (Eligible Offset)\n");
-        sb.append("NET TAXABLE SHORT-TERM GAINS:         +₹5,14,596.00\n");
+        sb.append(String.format(Locale.US, "CLOSED TRADES (SELLS):                %d (%d wins / %d losses)%n", st.sells, st.wins, st.losses));
+        sb.append(String.format(Locale.US, "SHORT-TERM CAPITAL GAINS (STCG):      %s%n", inr(stcg)));
+        sb.append(String.format(Locale.US, "LONG-TERM CAPITAL GAINS (LTCG):       %s%n", inr(ltcg)));
+        sb.append(String.format(Locale.US, "NET REALIZED CAPITAL GAINS:           %s%n", inr(stcg + ltcg)));
+        sb.append(String.format(Locale.US, "TAX LOSS HARVESTING (OPEN LOSSES):    %s%n", inr(harvest)));
         sb.append("--------------------------------------------------------------------------------\n");
-        sb.append("SECURITIES TRANSACTION TAX (STT):      ₹1,472.80\n");
-        sb.append("EXCHANGE TURNOVER CHARGES:             ₹47.50\n");
-        sb.append("SEBI REGULATORY FEES:                  ₹1.50\n");
-        sb.append("STAMP DUTY:                            ₹221.00\n");
-        sb.append("GST (18% ON APPLICABLE BROKERAGE):     ₹51.20\n");
-        sb.append("TOTAL REGULATORY & STATUTORY CHARGES:  ₹1,794.00\n");
+        sb.append(String.format(Locale.US, "EST. TAX ON STCG (20%%):               %s%n", inr(stcgTax)));
+        sb.append(String.format(Locale.US, "EST. TAX ON LTCG (12.5%% > 1.25L):     %s%n", inr(ltcgTax)));
+        sb.append(String.format(Locale.US, "TRADING FEES PAID (%s): %s%n",
+                tradingService != null ? tradingService.getFeeDescription() : "fees", inr(feesInr)));
         sb.append("--------------------------------------------------------------------------------\n");
-        sb.append("NET AFTER-TAX REALIZED PROCEEDS:      +₹7,52,763.00\n");
+        sb.append(String.format(Locale.US, "NET AFTER ESTIMATED TAX:              %s%n", inr(stcg + ltcg - stcgTax - ltcgTax)));
+        sb.append("\nEducational estimate only. Rupee values use the USD/INR rate shown in the app.\n");
 
         javax.swing.JTextArea area = new javax.swing.JTextArea(sb.toString());
         area.setFont(new Font("JetBrains Mono", Font.PLAIN, 12));
@@ -890,6 +972,10 @@ public class HistoryPanel extends BasePanel {
 
         d.setContentPane(p);
         d.setVisible(true);
+    }
+
+    private static String inr(double v) {
+        return String.format(Locale.US, "%s₹%,.2f", v < 0 ? "-" : "+", Math.abs(v));
     }
 
     private JButton createVectorActionBtn(String text, Color bg, Color border, Color fg, int type) {
@@ -955,7 +1041,8 @@ public class HistoryPanel extends BasePanel {
             double price,
             double grossValue,
             double realizedPnl,
-            String status
+            String status,
+            double fee          // fee actually charged by the simulator's FeeCalculator
     ) {}
 
     // =========================================================================
@@ -1323,26 +1410,26 @@ public class HistoryPanel extends BasePanel {
     // =========================================================================
 
     private class OrderInspectorPanel extends JPanel {
-        private final JLabel orderTitle = new JLabel("#ORD-9842");
+        private final JLabel orderTitle = new JLabel("No order selected");
         private final JLabel statusBadge = new JLabel("SIMULATED FILLED", SwingConstants.CENTER);
-        private final JLabel timestampLbl = new JLabel("14 Nov 2024, 14:28:12 IST");
+        private final JLabel timestampLbl = new JLabel("-");
 
-        private final JLabel assetIcon = new JLabel("R", SwingConstants.CENTER);
-        private final JLabel assetName = new JLabel("RELIANCE");
-        private final JLabel assetSub = new JLabel("Reliance Industries Ltd · NSE");
-        private final JLabel sideTag = new JLabel("BUY / CNC");
-        private final JLabel qtyPriceLbl = new JLabel("50 Sh @ ₹2,945.50");
+        private final JLabel assetIcon = new JLabel("-", SwingConstants.CENTER);
+        private final JLabel assetName = new JLabel("-");
+        private final JLabel assetSub = new JLabel("Click a row to inspect it");
+        private final JLabel sideTag = new JLabel("-");
+        private final JLabel qtyPriceLbl = new JLabel("-");
 
         // Receipt fields
-        private final JLabel grossValLbl = new JLabel("₹1,47,275.00");
-        private final JLabel brokerageLbl = new JLabel("₹0.00");
-        private final JLabel sttTaxLbl = new JLabel("₹147.28");
-        private final JLabel turnoverFeeLbl = new JLabel("₹4.75");
-        private final JLabel sebiLbl = new JLabel("₹0.15");
-        private final JLabel stampLbl = new JLabel("₹22.10");
-        private final JLabel gstLbl = new JLabel("₹5.12");
-        private final JLabel netSettledLbl = new JLabel("₹1,47,454.40");
-        private final JLabel realizedPnlLbl = new JLabel("+₹24,500.00 (+16.63%)");
+        private final JLabel grossValLbl = new JLabel("-");
+        private final JLabel brokerageLbl = new JLabel("-");
+        private final JLabel sttTaxLbl = new JLabel("-");
+        private final JLabel turnoverFeeLbl = new JLabel("-");
+        private final JLabel sebiLbl = new JLabel("-");
+        private final JLabel stampLbl = new JLabel("-");
+        private final JLabel gstLbl = new JLabel("-");
+        private final JLabel netSettledLbl = new JLabel("-");
+        private final JLabel realizedPnlLbl = new JLabel("-");
 
         private AuditRowData selectedRow;
 
@@ -1463,12 +1550,12 @@ public class HistoryPanel extends BasePanel {
             ));
 
             receipt.add(buildReceiptRow("Gross Order Value", grossValLbl));
-            receipt.add(buildReceiptRow("Brokerage (Zero Sim)", brokerageLbl));
-            receipt.add(buildReceiptRow("STT / CTT Tax", sttTaxLbl));
-            receipt.add(buildReceiptRow("Exchange Turnover Fee", turnoverFeeLbl));
-            receipt.add(buildReceiptRow("SEBI Charges", sebiLbl));
-            receipt.add(buildReceiptRow("Stamp Duty", stampLbl));
-            receipt.add(buildReceiptRow("GST (18% on levies)", gstLbl));
+            receipt.add(buildReceiptRow("Simulator Fee (charged)", brokerageLbl));
+            receipt.add(buildReceiptRow("STT / CTT Tax (not simulated)", sttTaxLbl));
+            receipt.add(buildReceiptRow("Exchange Turnover Fee (not simulated)", turnoverFeeLbl));
+            receipt.add(buildReceiptRow("SEBI Charges (not simulated)", sebiLbl));
+            receipt.add(buildReceiptRow("Stamp Duty (not simulated)", stampLbl));
+            receipt.add(buildReceiptRow("GST (not simulated)", gstLbl));
             receipt.add(Box.createVerticalStrut(4));
 
             JPanel line = new JPanel();
@@ -1539,7 +1626,7 @@ public class HistoryPanel extends BasePanel {
             this.selectedRow = r;
             orderTitle.setText(r.orderId());
             statusBadge.setText("SIMULATED " + r.status());
-            timestampLbl.setText(r.timestamp().format(DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm:ss")) + " IST");
+            timestampLbl.setText(r.timestamp().format(DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm:ss")));
 
             assetIcon.setText(r.symbol().substring(0, 1));
             assetName.setText(r.symbol());
@@ -1551,20 +1638,19 @@ public class HistoryPanel extends BasePanel {
             String cur = indian ? "₹" : "$";
             qtyPriceLbl.setText(String.format(Locale.US, "%d Sh @ %s%,.2f", r.quantity(), cur, r.price()));
 
+            // The simulator charges one fee (FeeCalculator); Indian statutory levies are not simulated.
             double gross = r.grossValue();
-            double stt = gross * 0.001;
-            double fee = gross * 0.00003;
-            double sebi = gross * 0.000001;
-            double stamp = gross * 0.00015;
-            double gst = (fee + sebi + stamp) * 0.18;
-            double net = gross + stt + fee + sebi + stamp + gst;
+            double fee = r.fee();
+            double net = "BUY".equalsIgnoreCase(r.side()) ? gross + fee : gross - fee;   // paid vs received
 
             grossValLbl.setText(String.format(Locale.US, "%s%,.2f", cur, gross));
-            sttTaxLbl.setText(String.format(Locale.US, "%s%,.2f", cur, stt));
-            turnoverFeeLbl.setText(String.format(Locale.US, "%s%,.2f", cur, fee));
-            sebiLbl.setText(String.format(Locale.US, "%s%,.2f", cur, sebi));
-            stampLbl.setText(String.format(Locale.US, "%s%,.2f", cur, stamp));
-            gstLbl.setText(String.format(Locale.US, "%s%,.2f", cur, gst));
+            brokerageLbl.setText(String.format(Locale.US, "%s%,.2f", cur, fee));
+            String zero = cur + "0.00";
+            sttTaxLbl.setText(zero);
+            turnoverFeeLbl.setText(zero);
+            sebiLbl.setText(zero);
+            stampLbl.setText(zero);
+            gstLbl.setText(zero);
             netSettledLbl.setText(String.format(Locale.US, "%s%,.2f", cur, net));
 
             if (r.realizedPnl() != 0.0) {
@@ -1590,6 +1676,8 @@ public class HistoryPanel extends BasePanel {
                     fw.write("QUANTITY: " + selectedRow.quantity() + "\n");
                     fw.write("EXECUTION PRICE: " + selectedRow.price() + "\n");
                     fw.write("GROSS VALUE: " + selectedRow.grossValue() + "\n");
+                    fw.write("FEE CHARGED: " + selectedRow.fee() + "\n");
+                    fw.write("REALIZED P&L: " + selectedRow.realizedPnl() + "\n");
                     fw.write("STATUS: " + selectedRow.status() + "\n");
                     fw.write("DATE: " + Formatter.dateTime(selectedRow.timestamp()) + "\n");
                     JOptionPane.showMessageDialog(this, "Trade receipt saved successfully!", "Saved", JOptionPane.INFORMATION_MESSAGE);
@@ -1601,201 +1689,136 @@ public class HistoryPanel extends BasePanel {
     }
 
     // =========================================================================
-    // SECTION 2 KPI CARDS IMPLEMENTATIONS
+    // SECTION 2 KPI CARDS IMPLEMENTATIONS (all values come from TradeStats = the real trades)
     // =========================================================================
 
+    /** Rupee text for a USD amount, e.g. "+₹1,234". */
+    private static String rupees(double usd) {
+        double v = usd * USD_TO_INR;
+        return String.format(Locale.US, "%s₹%,.0f", v < 0 ? "-" : "+", Math.abs(v));
+    }
+
+    /** Shared look of the six KPI cards: title + badge on top, big value, small line below. */
+    private static JPanel kpiFrame(JPanel card, String title, JLabel badge, JLabel value, JLabel sub) {
+        card.setLayout(new BorderLayout(0, 4));
+        card.setBackground(Theme.CARD_BG);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 8, 1),
+                BorderFactory.createEmptyBorder(8, 10, 8, 10)
+        ));
+        JPanel top = new JPanel(new BorderLayout());
+        top.setOpaque(false);
+        JLabel t = new JLabel(title);
+        t.setFont(new Font("Inter", Font.BOLD, 9));
+        t.setForeground(Theme.TXT_MUTED);
+        badge.setFont(Theme.MICRO);
+        top.add(t, BorderLayout.WEST);
+        top.add(badge, BorderLayout.EAST);
+        card.add(top, BorderLayout.NORTH);
+
+        value.setFont(Theme.BIG_NUMBER);
+        card.add(value, BorderLayout.CENTER);
+
+        sub.setFont(Theme.TINY);
+        sub.setForeground(Theme.TXT_MUTED);
+        card.add(sub, BorderLayout.SOUTH);
+        return card;
+    }
+
     private static class TotalTradesKpiCard extends JPanel {
+        private final JLabel badge = new JLabel("+0 Today");
         private final JLabel valLbl = new JLabel("0");
+        private final JLabel subLbl = new JLabel("Pending orders: 0");
+
         public TotalTradesKpiCard() {
-            setLayout(new BorderLayout(0, 4));
-            setBackground(Theme.CARD_BG);
-            setBorder(BorderFactory.createCompoundBorder(
-                    new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 8, 1),
-                    BorderFactory.createEmptyBorder(8, 10, 8, 10)
-            ));
-            JPanel top = new JPanel(new BorderLayout());
-            top.setOpaque(false);
-            JLabel t = new JLabel("TOTAL TRADES");
-            t.setFont(new Font("Inter", Font.BOLD, 9));
-            t.setForeground(Theme.TXT_MUTED);
-            JLabel b = new JLabel("+12 Today");
-            b.setFont(Theme.MICRO);
-            b.setForeground(Theme.GAIN);
-            top.add(t, BorderLayout.WEST);
-            top.add(b, BorderLayout.EAST);
-            add(top, BorderLayout.NORTH);
-
-            valLbl.setFont(Theme.BIG_NUMBER);
+            kpiFrame(this, "TOTAL TRADES", badge, valLbl, subLbl);
+            badge.setForeground(Theme.GAIN);
             valLbl.setForeground(Theme.TXT_PRIMARY);
-            add(valLbl, BorderLayout.CENTER);
-
-            JLabel sub = new JLabel("Simulated fills: 100.0%");
-            sub.setFont(Theme.TINY);
-            sub.setForeground(Theme.TXT_MUTED);
-            add(sub, BorderLayout.SOUTH);
         }
-        public void updateData(int count) {
-            valLbl.setText(String.valueOf(count));
+
+        public void updateData(TradeStats st, int pending) {
+            valLbl.setText(String.valueOf(st.trades));
+            badge.setText("+" + st.todayTrades + " Today");
+            subLbl.setText("Pending orders: " + pending);
         }
     }
 
     private static class SideKpiCard extends JPanel {
+        private final JLabel badge = new JLabel("0.0% Vol");
         private final JLabel valLbl = new JLabel("0");
         private final JLabel grossLbl = new JLabel("Gross: ₹0.00");
         private final boolean isBuy;
 
         public SideKpiCard(String title, boolean buy) {
             this.isBuy = buy;
-            setLayout(new BorderLayout(0, 4));
-            setBackground(Theme.CARD_BG);
-            setBorder(BorderFactory.createCompoundBorder(
-                    new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 8, 1),
-                    BorderFactory.createEmptyBorder(8, 10, 8, 10)
-            ));
-            JPanel top = new JPanel(new BorderLayout());
-            top.setOpaque(false);
-            JLabel t = new JLabel(title.toUpperCase());
-            t.setFont(new Font("Inter", Font.BOLD, 9));
-            t.setForeground(Theme.TXT_MUTED);
-            JLabel b = new JLabel(buy ? "57.3% Vol" : "42.7% Vol");
-            b.setFont(Theme.MICRO);
-            b.setForeground(buy ? Theme.GAIN : Theme.LOSS);
-            top.add(t, BorderLayout.WEST);
-            top.add(b, BorderLayout.EAST);
-            add(top, BorderLayout.NORTH);
-
-            valLbl.setFont(Theme.BIG_NUMBER);
+            kpiFrame(this, title.toUpperCase(), badge, valLbl, grossLbl);
+            badge.setForeground(buy ? Theme.GAIN : Theme.LOSS);
             valLbl.setForeground(buy ? Theme.GAIN : Theme.LOSS);
-            add(valLbl, BorderLayout.CENTER);
-
-            grossLbl.setFont(Theme.TINY);
-            grossLbl.setForeground(Theme.TXT_MUTED);
-            add(grossLbl, BorderLayout.SOUTH);
         }
 
-        public void updateData(List<AuditRowData> rows) {
-            long count = rows.stream().filter(r -> isBuy ? "BUY".equalsIgnoreCase(r.side()) : "SELL".equalsIgnoreCase(r.side())).count();
-            double sum = rows.stream().filter(r -> isBuy ? "BUY".equalsIgnoreCase(r.side()) : "SELL".equalsIgnoreCase(r.side()))
-                    .mapToDouble(AuditRowData::grossValue).sum();
-            valLbl.setText(String.valueOf(count));
-            grossLbl.setText(String.format(Locale.US, "Gross %s: ₹%,.1fL", isBuy ? "Buy" : "Sell", (sum * USD_TO_INR) / 100000.0));
+        public void updateData(TradeStats st) {
+            double mine = isBuy ? st.buyGross : st.sellGross;
+            double total = st.buyGross + st.sellGross;
+            valLbl.setText(String.valueOf(isBuy ? st.buys : st.sells));
+            badge.setText(String.format(Locale.US, "%.1f%% Vol", total > 0 ? mine / total * 100 : 0));
+            grossLbl.setText(String.format(Locale.US, "Gross %s: ₹%,.1fL", isBuy ? "Buy" : "Sell", (mine * USD_TO_INR) / 100000.0));
         }
     }
 
     private static class RealizedPnlKpiCard extends JPanel {
-        private final JLabel valLbl = new JLabel("+₹0.00");
+        private final JLabel badge = new JLabel("0 Closed");
+        private final JLabel valLbl = new JLabel("+₹0");
+        private final JLabel subLbl = new JLabel("Unrealized: N/A");
+
         public RealizedPnlKpiCard() {
-            setLayout(new BorderLayout(0, 4));
-            setBackground(Theme.CARD_BG);
-            setBorder(BorderFactory.createCompoundBorder(
-                    new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 8, 1),
-                    BorderFactory.createEmptyBorder(8, 10, 8, 10)
-            ));
-            JPanel top = new JPanel(new BorderLayout());
-            top.setOpaque(false);
-            JLabel t = new JLabel("REALIZED P&L");
-            t.setFont(new Font("Inter", Font.BOLD, 9));
-            t.setForeground(Theme.TXT_MUTED);
-            JLabel b = new JLabel("+9.99% Alpha");
-            b.setFont(Theme.MICRO);
-            b.setForeground(Theme.GAIN);
-            top.add(t, BorderLayout.WEST);
-            top.add(b, BorderLayout.EAST);
-            add(top, BorderLayout.NORTH);
-
-            valLbl.setFont(Theme.BIG_NUMBER);
-            valLbl.setForeground(Theme.GAIN);
-            add(valLbl, BorderLayout.CENTER);
-
-            JLabel sub = new JLabel("Unrealized: +₹4,12,300");
-            sub.setFont(Theme.TINY);
-            sub.setForeground(Theme.TXT_MUTED);
-            add(sub, BorderLayout.SOUTH);
+            kpiFrame(this, "REALIZED P&L", badge, valLbl, subLbl);
+            badge.setForeground(Theme.ACCENT);
         }
 
-        public void updateData(List<AuditRowData> rows) {
-            double tot = rows.stream().mapToDouble(AuditRowData::realizedPnl).sum() * USD_TO_INR;
-            String sign = tot >= 0 ? "+" : "-";
-            valLbl.setText(String.format(Locale.US, "%s₹%,.0f", sign, Math.abs(tot)));
-            valLbl.setForeground(tot >= 0 ? Theme.GAIN : Theme.LOSS);
+        public void updateData(TradeStats st, double unrealizedUsd) {
+            valLbl.setText(rupees(st.realized));
+            valLbl.setForeground(st.realized >= 0 ? Theme.GAIN : Theme.LOSS);
+            badge.setText(st.sells + " Closed");
+            subLbl.setText("Unrealized: " + (Double.isNaN(unrealizedUsd) ? "N/A" : rupees(unrealizedUsd)));
         }
     }
 
     private static class WinRateKpiCard extends JPanel {
-        private final JLabel valLbl = new JLabel("68.5%");
-        private final JLabel subLbl = new JLabel("Win / Loss: 170 W / 78 L");
+        private final JLabel badge = new JLabel("PF: n/a");
+        private final JLabel valLbl = new JLabel("-");
+        private final JLabel subLbl = new JLabel("Win / Loss: 0 W / 0 L");
 
         public WinRateKpiCard() {
-            setLayout(new BorderLayout(0, 4));
-            setBackground(Theme.CARD_BG);
-            setBorder(BorderFactory.createCompoundBorder(
-                    new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 8, 1),
-                    BorderFactory.createEmptyBorder(8, 10, 8, 10)
-            ));
-            JPanel top = new JPanel(new BorderLayout());
-            top.setOpaque(false);
-            JLabel t = new JLabel("WIN RATE");
-            t.setFont(new Font("Inter", Font.BOLD, 9));
-            t.setForeground(Theme.TXT_MUTED);
-            JLabel b = new JLabel("PF: 2.41");
-            b.setFont(Theme.MICRO);
-            b.setForeground(Theme.ACCENT);
-            top.add(t, BorderLayout.WEST);
-            top.add(b, BorderLayout.EAST);
-            add(top, BorderLayout.NORTH);
-
-            valLbl.setFont(Theme.BIG_NUMBER);
+            kpiFrame(this, "WIN RATE", badge, valLbl, subLbl);
+            badge.setForeground(Theme.ACCENT);
             valLbl.setForeground(Theme.TXT_PRIMARY);
-            add(valLbl, BorderLayout.CENTER);
-
-            subLbl.setFont(Theme.TINY);
-            subLbl.setForeground(Theme.TXT_MUTED);
-            add(subLbl, BorderLayout.SOUTH);
         }
 
-        public void updateData(List<AuditRowData> rows) {
-            long wins = rows.stream().filter(r -> r.realizedPnl() > 0).count();
-            long losses = rows.stream().filter(r -> r.realizedPnl() < 0).count();
-            long total = wins + losses;
-            double rate = total > 0 ? (wins / (double) total) * 100.0 : 68.5;
-            valLbl.setText(String.format(Locale.US, "%.1f%%", rate));
-            subLbl.setText(String.format("Win / Loss: %d W / %d L", wins, losses));
+        public void updateData(TradeStats st) {
+            double rate = st.winRate();
+            valLbl.setText(Double.isNaN(rate) ? "-" : String.format(Locale.US, "%.1f%%", rate));
+            subLbl.setText(String.format("Win / Loss: %d W / %d L", st.wins, st.losses));
+            badge.setText("PF: " + PerformanceAnalyzer.format(st.profitFactor(), ""));
         }
     }
 
     private static class FeesKpiCard extends JPanel {
-        private final JLabel valLbl = new JLabel("₹2,845.60");
+        private final JLabel badge = new JLabel("0.000% Vol");
+        private final JLabel valLbl = new JLabel("₹0.00");
+        private final JLabel subLbl = new JLabel("Fee model: -");
+
         public FeesKpiCard() {
-            setLayout(new BorderLayout(0, 4));
-            setBackground(Theme.CARD_BG);
-            setBorder(BorderFactory.createCompoundBorder(
-                    new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 8, 1),
-                    BorderFactory.createEmptyBorder(8, 10, 8, 10)
-            ));
-            JPanel top = new JPanel(new BorderLayout());
-            top.setOpaque(false);
-            JLabel t = new JLabel("TRADING FEES");
-            t.setFont(new Font("Inter", Font.BOLD, 9));
-            t.setForeground(Theme.TXT_MUTED);
-            JLabel b = new JLabel("0.034% Vol");
-            b.setFont(Theme.MICRO);
-            b.setForeground(Theme.TXT_MUTED);
-            top.add(t, BorderLayout.WEST);
-            top.add(b, BorderLayout.EAST);
-            add(top, BorderLayout.NORTH);
-
-            valLbl.setFont(Theme.BIG_NUMBER);
+            kpiFrame(this, "TRADING FEES", badge, valLbl, subLbl);
+            badge.setForeground(Theme.TXT_MUTED);
             valLbl.setForeground(Theme.TXT_PRIMARY);
-            add(valLbl, BorderLayout.CENTER);
-
-            JLabel sub = new JLabel("Brokerage: ₹0 (Zero Sim)");
-            sub.setFont(Theme.TINY);
-            sub.setForeground(Theme.GAIN);
-            add(sub, BorderLayout.SOUTH);
+            subLbl.setForeground(Theme.GAIN);
         }
-        public void updateData(List<AuditRowData> rows) {
-            double sum = rows.stream().mapToDouble(r -> r.grossValue() * 0.00015).sum() * USD_TO_INR;
-            valLbl.setText(String.format(Locale.US, "₹%,.2f", sum));
+
+        public void updateData(TradeStats st, String feeModel) {
+            double volume = st.buyGross + st.sellGross;
+            valLbl.setText(String.format(Locale.US, "₹%,.2f", st.fees * USD_TO_INR));
+            badge.setText(String.format(Locale.US, "%.3f%% Vol", volume > 0 ? st.fees / volume * 100 : 0));
+            subLbl.setText("Fee model: " + feeModel);
         }
     }
 
@@ -1803,56 +1826,78 @@ public class HistoryPanel extends BasePanel {
     // SECTION 3 ANALYTICS SUITE: HISTOGRAM, GROWTH, DONUT
     // =========================================================================
 
+    private static JPanel cardHeader(String title, JLabel sub) {
+        JPanel top = new JPanel(new BorderLayout());
+        top.setOpaque(false);
+        JLabel t = new JLabel(title);
+        t.setFont(new Font("Inter", Font.BOLD, 13));
+        t.setForeground(Theme.TXT_PRIMARY);
+        sub.setFont(Theme.MICRO);
+        sub.setForeground(Theme.TXT_MUTED);
+        top.add(t, BorderLayout.NORTH);
+        top.add(sub, BorderLayout.SOUTH);
+        return top;
+    }
+
+    private static void styleAnalyticsCard(JPanel card) {
+        card.setBackground(Theme.CARD_BG);
+        card.setBorder(BorderFactory.createCompoundBorder(
+                new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 8, 1),
+                BorderFactory.createEmptyBorder(10, 12, 10, 12)
+        ));
+    }
+
+    private static JLabel emptyNote(String text) {
+        JLabel l = new JLabel(text, SwingConstants.CENTER);
+        l.setFont(Theme.MICRO);
+        l.setForeground(Theme.TXT_MUTED);
+        return l;
+    }
+
+    /** Realized P&L of the last 14 days that had a sell, one bar per day. */
     private static class DailyHistogramCard extends JPanel {
+        private final JLabel sub = new JLabel("No closed trades yet");
+        private final JLabel maxWin = new JLabel("Best Trade: -");
+        private final JLabel maxLoss = new JLabel("Worst Trade: -");
+        private List<Double> bars = List.of();
+
         public DailyHistogramCard() {
             setLayout(new BorderLayout(0, 8));
-            setBackground(Theme.CARD_BG);
-            setBorder(BorderFactory.createCompoundBorder(
-                    new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 8, 1),
-                    BorderFactory.createEmptyBorder(10, 12, 10, 12)
-            ));
+            styleAnalyticsCard(this);
+            add(cardHeader("Daily Realized P&L", sub), BorderLayout.NORTH);
 
-            JPanel top = new JPanel(new BorderLayout());
-            top.setOpaque(false);
-            JLabel title = new JLabel("Daily Realized P&L");
-            title.setFont(new Font("Inter", Font.BOLD, 13));
-            title.setForeground(Theme.TXT_PRIMARY);
-            JLabel sub = new JLabel("Session distribution (Last 16 trading days)");
-            sub.setFont(Theme.MICRO);
-            sub.setForeground(Theme.TXT_MUTED);
-            top.add(title, BorderLayout.NORTH);
-            top.add(sub, BorderLayout.SOUTH);
-            add(top, BorderLayout.NORTH);
-
-            // Java2D Histogram Canvas
             JPanel canvas = new JPanel() {
                 @Override
                 protected void paintComponent(Graphics g) {
                     super.paintComponent(g);
                     Graphics2D g2 = (Graphics2D) g.create();
                     g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
                     int w = getWidth();
                     int h = getHeight();
-                    int baselineY = (int) (h * 0.65);
-
-                    // Zero baseline
+                    int baselineY = h / 2;
                     g2.setColor(Theme.BORDER_CUSTOM);
                     g2.drawLine(0, baselineY, w, baselineY);
-
-                    // 14 Bars
-                    int[] vals = {18, 32, -12, 42, 14, 68, 42, -9, 30, 61, 94, -15, 54, 104};
-                    int barW = Math.max(4, (w - (vals.length * 6)) / vals.length);
-
-                    for (int i = 0; i < vals.length; i++) {
-                        int val = vals[i];
-                        int x = 10 + i * (barW + 5);
-                        int barH = (int) ((Math.abs(val) / 110.0) * (h * 0.55));
+                    if (bars.isEmpty()) {
+                        g2.setColor(Theme.TXT_MUTED);
+                        g2.setFont(Theme.MICRO);
+                        g2.drawString("Sell a position to see daily results", 10, baselineY - 8);
+                        g2.dispose();
+                        return;
+                    }
+                    double maxAbs = 1e-9;
+                    for (double v : bars) {
+                        maxAbs = Math.max(maxAbs, Math.abs(v));
+                    }
+                    int slot = Math.max(6, (w - 10) / 14);
+                    int barW = Math.max(4, slot - 5);
+                    for (int i = 0; i < bars.size(); i++) {
+                        double val = bars.get(i);
+                        int x = 10 + i * slot;
+                        int barH = Math.max(1, (int) (Math.abs(val) / maxAbs * (h * 0.45)));
+                        g2.setColor(val >= 0 ? Theme.GAIN : Theme.LOSS);
                         if (val >= 0) {
-                            g2.setColor(Theme.GAIN);
                             g2.fillRoundRect(x, baselineY - barH, barW, barH, 4, 4);
                         } else {
-                            g2.setColor(Theme.LOSS);
                             g2.fillRoundRect(x, baselineY, barW, barH, 4, 4);
                         }
                     }
@@ -1865,39 +1910,35 @@ public class HistoryPanel extends BasePanel {
 
             JPanel ftr = new JPanel(new BorderLayout());
             ftr.setOpaque(false);
-            JLabel maxWin = new JLabel("Max Win: +₹1,03,900");
             maxWin.setFont(Theme.MICRO);
             maxWin.setForeground(Theme.GAIN);
-            JLabel maxDraw = new JLabel("Max Drawdown: -₹14,500");
-            maxDraw.setFont(Theme.MICRO);
-            maxDraw.setForeground(Theme.LOSS);
+            maxLoss.setFont(Theme.MICRO);
+            maxLoss.setForeground(Theme.LOSS);
             ftr.add(maxWin, BorderLayout.WEST);
-            ftr.add(maxDraw, BorderLayout.EAST);
+            ftr.add(maxLoss, BorderLayout.EAST);
             add(ftr, BorderLayout.SOUTH);
         }
-        public void updateData(List<AuditRowData> rows) { repaint(); }
+
+        public void updateData(TradeStats st) {
+            List<Double> days = new ArrayList<>(st.dailyPnl.values());
+            bars = days.subList(Math.max(0, days.size() - 14), days.size());
+            sub.setText(bars.isEmpty() ? "No closed trades yet" : "Last " + bars.size() + " trading days with closed trades");
+            maxWin.setText("Best Trade: " + (st.wins == 0 ? "-" : rupees(st.bestTrade)));
+            maxLoss.setText("Worst Trade: " + (st.losses == 0 ? "-" : rupees(st.worstTrade)));
+            repaint();
+        }
     }
 
+    /** Running total of realized P&L after every sell, against the break-even line. */
     private static class CumulativeGrowthCard extends JPanel {
+        private final JLabel sub = new JLabel("Running total of realized P&L");
+        private final JLabel leg1 = new JLabel("● Realized P&L: +₹0");
+        private List<Double> curve = List.of();
+
         public CumulativeGrowthCard() {
             setLayout(new BorderLayout(0, 8));
-            setBackground(Theme.CARD_BG);
-            setBorder(BorderFactory.createCompoundBorder(
-                    new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 8, 1),
-                    BorderFactory.createEmptyBorder(10, 12, 10, 12)
-            ));
-
-            JPanel top = new JPanel(new BorderLayout());
-            top.setOpaque(false);
-            JLabel title = new JLabel("Cumulative Growth Curve");
-            title.setFont(new Font("Inter", Font.BOLD, 13));
-            title.setForeground(Theme.TXT_PRIMARY);
-            JLabel sub = new JLabel("Vs NIFTY50 Simulated Benchmark");
-            sub.setFont(Theme.MICRO);
-            sub.setForeground(Theme.TXT_MUTED);
-            top.add(title, BorderLayout.NORTH);
-            top.add(sub, BorderLayout.SOUTH);
-            add(top, BorderLayout.NORTH);
+            styleAnalyticsCard(this);
+            add(cardHeader("Cumulative Growth Curve", sub), BorderLayout.NORTH);
 
             JPanel canvas = new JPanel() {
                 @Override
@@ -1905,35 +1946,44 @@ public class HistoryPanel extends BasePanel {
                     super.paintComponent(g);
                     Graphics2D g2 = (Graphics2D) g.create();
                     g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
                     int w = getWidth();
                     int h = getHeight();
+                    List<Double> pts = new ArrayList<>();
+                    pts.add(0.0);               // every account starts at break-even
+                    pts.addAll(curve);
+                    double min = Math.min(0, Collections.min(pts));
+                    double max = Math.max(0, Collections.max(pts));
+                    double range = max - min < 1e-9 ? 1 : max - min;
+                    int zeroY = (int) (h - 4 - (0 - min) / range * (h - 8));
 
-                    // Benchmark dashed line
                     g2.setColor(Theme.TXT_MUTED);
                     g2.setStroke(new BasicStroke(1.2f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 10f, new float[]{4f, 4f}, 0f));
-                    g2.drawLine(0, (int) (h * 0.85), w, (int) (h * 0.65));
-
-                    // Equity Curve + Area
+                    g2.drawLine(0, zeroY, w, zeroY);
+                    if (curve.isEmpty()) {
+                        g2.dispose();
+                        return;
+                    }
                     Path2D p = new Path2D.Double();
-                    p.moveTo(0, h * 0.88);
-                    p.curveTo(w * 0.3, h * 0.75, w * 0.6, h * 0.35, w, h * 0.15);
-
+                    double lastX = 0;
+                    double lastY = zeroY;
+                    for (int i = 0; i < pts.size(); i++) {
+                        lastX = (double) i / (pts.size() - 1) * (w - 4);
+                        lastY = h - 4 - (pts.get(i) - min) / range * (h - 8);
+                        if (i == 0) p.moveTo(lastX, lastY);
+                        else p.lineTo(lastX, lastY);
+                    }
+                    Color c = pts.get(pts.size() - 1) >= 0 ? Theme.GAIN : Theme.LOSS;
                     Path2D area = new Path2D.Double(p);
-                    area.lineTo(w, h);
-                    area.lineTo(0, h);
+                    area.lineTo(lastX, zeroY);
+                    area.lineTo(0, zeroY);
                     area.closePath();
-
-                    GradientPaint gp = new GradientPaint(0, 0, new Color(34, 197, 94, 60), 0, h, new Color(34, 197, 94, 0));
-                    g2.setPaint(gp);
+                    g2.setPaint(new GradientPaint(0, 0, new Color(c.getRed(), c.getGreen(), c.getBlue(), 60),
+                            0, h, new Color(c.getRed(), c.getGreen(), c.getBlue(), 0)));
                     g2.fill(area);
-
-                    g2.setColor(Theme.GAIN);
+                    g2.setColor(c);
                     g2.setStroke(new BasicStroke(2.0f));
                     g2.draw(p);
-
-                    // End node
-                    g2.fillOval(w - 5, (int) (h * 0.15) - 3, 6, 6);
+                    g2.fillOval((int) lastX - 3, (int) lastY - 3, 6, 6);
                     g2.dispose();
                 }
             };
@@ -1943,73 +1993,76 @@ public class HistoryPanel extends BasePanel {
 
             JPanel ftr = new JPanel(new BorderLayout());
             ftr.setOpaque(false);
-            JLabel leg1 = new JLabel("● Paper Account Portfolio");
             leg1.setFont(Theme.MICRO);
             leg1.setForeground(Theme.GAIN);
-            JLabel leg2 = new JLabel("--- Benchmark Index");
+            JLabel leg2 = new JLabel("--- Break-even");
             leg2.setFont(Theme.MICRO);
             leg2.setForeground(Theme.TXT_MUTED);
             ftr.add(leg1, BorderLayout.WEST);
             ftr.add(leg2, BorderLayout.EAST);
             add(ftr, BorderLayout.SOUTH);
         }
-        public void updateData(List<AuditRowData> rows) { repaint(); }
+
+        public void updateData(TradeStats st) {
+            curve = new ArrayList<>(st.cumulativePnl);
+            sub.setText(curve.isEmpty() ? "No closed trades yet" : "Running total after each of " + curve.size() + " sells");
+            leg1.setText("● Realized P&L: " + rupees(st.realized));
+            leg1.setForeground(st.realized >= 0 ? Theme.GAIN : Theme.LOSS);
+            repaint();
+        }
     }
 
+    /** Wins / losses / break-even sells as a donut. */
     private static class WinLossDonutCard extends JPanel {
+        private final JLabel winsLbl = new JLabel("0 (0.0%)");
+        private final JLabel lossLbl = new JLabel("0 (0.0%)");
+        private final JLabel evenLbl = new JLabel("0 (0.0%)");
+        private final JLabel avg = new JLabel("Avg Win/Loss: - / -");
+        private int wins;
+        private int losses;
+        private int even;
+
         public WinLossDonutCard() {
             setLayout(new BorderLayout(0, 6));
-            setBackground(Theme.CARD_BG);
-            setBorder(BorderFactory.createCompoundBorder(
-                    new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 8, 1),
-                    BorderFactory.createEmptyBorder(10, 12, 10, 12)
-            ));
-
-            JPanel top = new JPanel(new BorderLayout());
-            top.setOpaque(false);
-            JLabel title = new JLabel("Execution Ratio & Spread");
-            title.setFont(new Font("Inter", Font.BOLD, 13));
-            title.setForeground(Theme.TXT_PRIMARY);
-            JLabel sub = new JLabel("Trade outcome partition");
-            sub.setFont(Theme.MICRO);
-            sub.setForeground(Theme.TXT_MUTED);
-            top.add(title, BorderLayout.NORTH);
-            top.add(sub, BorderLayout.SOUTH);
-            add(top, BorderLayout.NORTH);
+            styleAnalyticsCard(this);
+            add(cardHeader("Execution Ratio & Spread", new JLabel("Outcome of every closed (sell) trade")), BorderLayout.NORTH);
 
             JPanel mid = new JPanel(new BorderLayout(8, 0));
             mid.setOpaque(false);
-
-            // Donut Canvas
             JPanel donut = new JPanel() {
                 @Override
                 protected void paintComponent(Graphics g) {
                     super.paintComponent(g);
                     Graphics2D g2 = (Graphics2D) g.create();
                     g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
                     int size = Math.min(getWidth(), getHeight()) - 10;
                     int x = (getWidth() - size) / 2;
                     int y = (getHeight() - size) / 2;
                     int stroke = 10;
                     g2.setStroke(new BasicStroke(stroke));
-
-                    // Win 68.5%
-                    g2.setColor(Theme.GAIN);
-                    g2.draw(new Arc2D.Double(x + stroke/2.0, y + stroke/2.0, size - stroke, size - stroke, 90, -246, Arc2D.OPEN));
-                    // Loss 27.8%
-                    g2.setColor(Theme.LOSS);
-                    g2.draw(new Arc2D.Double(x + stroke/2.0, y + stroke/2.0, size - stroke, size - stroke, -156, -100, Arc2D.OPEN));
-                    // Even 3.7%
-                    g2.setColor(Theme.TXT_MUTED);
-                    g2.draw(new Arc2D.Double(x + stroke/2.0, y + stroke/2.0, size - stroke, size - stroke, -256, -14, Arc2D.OPEN));
-
-                    // Center Winrate
+                    double ax = x + stroke / 2.0;
+                    double ay = y + stroke / 2.0;
+                    double d = size - stroke;
+                    int total = wins + losses + even;
+                    if (total == 0) {
+                        g2.setColor(Theme.BORDER_CUSTOM);
+                        g2.draw(new Arc2D.Double(ax, ay, d, d, 0, 360, Arc2D.OPEN));
+                    } else {
+                        double start = 90;
+                        int[] counts = {wins, losses, even};
+                        Color[] colors = {Theme.GAIN, Theme.LOSS, Theme.TXT_MUTED};
+                        for (int i = 0; i < 3; i++) {
+                            double sweep = -360.0 * counts[i] / total;
+                            g2.setColor(colors[i]);
+                            g2.draw(new Arc2D.Double(ax, ay, d, d, start, sweep, Arc2D.OPEN));
+                            start += sweep;
+                        }
+                    }
                     g2.setColor(Theme.TXT_PRIMARY);
                     g2.setFont(new Font("JetBrains Mono", Font.BOLD, 12));
-                    String wStr = "68.5%";
+                    String wStr = wins + losses == 0 ? "-" : String.format(Locale.US, "%.1f%%", wins * 100.0 / (wins + losses));
                     FontMetrics fm = g2.getFontMetrics();
-                    g2.drawString(wStr, getWidth()/2 - fm.stringWidth(wStr)/2, getHeight()/2 + 4);
+                    g2.drawString(wStr, getWidth() / 2 - fm.stringWidth(wStr) / 2, getHeight() / 2 + 4);
                     g2.dispose();
                 }
             };
@@ -2017,30 +2070,28 @@ public class HistoryPanel extends BasePanel {
             donut.setOpaque(false);
             mid.add(donut, BorderLayout.WEST);
 
-            JPanel stats = new JPanel(new GridLayout(3, 1, 0, 2));
-            stats.setOpaque(false);
-            stats.add(buildOutcomeRow("Wins", "170 (68.5%)", Theme.GAIN));
-            stats.add(buildOutcomeRow("Losses", "69 (27.8%)", Theme.LOSS));
-            stats.add(buildOutcomeRow("Even", "9 (3.7%)", Theme.TXT_MUTED));
-            mid.add(stats, BorderLayout.CENTER);
+            JPanel statsPanel = new JPanel(new GridLayout(3, 1, 0, 2));
+            statsPanel.setOpaque(false);
+            statsPanel.add(buildOutcomeRow("Wins", winsLbl, Theme.GAIN));
+            statsPanel.add(buildOutcomeRow("Losses", lossLbl, Theme.LOSS));
+            statsPanel.add(buildOutcomeRow("Even", evenLbl, Theme.TXT_MUTED));
+            mid.add(statsPanel, BorderLayout.CENTER);
             add(mid, BorderLayout.CENTER);
 
             JPanel ftr = new JPanel(new BorderLayout());
             ftr.setOpaque(false);
-            JLabel avg = new JLabel("Avg Win/Loss: +₹7,850 / -₹3,240");
             avg.setFont(Theme.MICRO);
             avg.setForeground(Theme.TXT_SECONDARY);
             ftr.add(avg, BorderLayout.WEST);
             add(ftr, BorderLayout.SOUTH);
         }
 
-        private JPanel buildOutcomeRow(String name, String val, Color c) {
+        private JPanel buildOutcomeRow(String name, JLabel v, Color c) {
             JPanel p = new JPanel(new BorderLayout());
             p.setOpaque(false);
             JLabel n = new JLabel("● " + name);
             n.setFont(Theme.TINY);
             n.setForeground(c);
-            JLabel v = new JLabel(val);
             v.setFont(new Font("JetBrains Mono", Font.BOLD, 10));
             v.setForeground(c);
             p.add(n, BorderLayout.WEST);
@@ -2048,34 +2099,48 @@ public class HistoryPanel extends BasePanel {
             return p;
         }
 
-        public void updateData(List<AuditRowData> rows) { repaint(); }
+        public void updateData(TradeStats st) {
+            wins = st.wins;
+            losses = st.losses;
+            even = st.even;
+            int total = Math.max(1, wins + losses + even);
+            winsLbl.setText(String.format(Locale.US, "%d (%.1f%%)", wins, wins * 100.0 / total));
+            lossLbl.setText(String.format(Locale.US, "%d (%.1f%%)", losses, losses * 100.0 / total));
+            evenLbl.setText(String.format(Locale.US, "%d (%.1f%%)", even, even * 100.0 / total));
+            avg.setText("Avg Win/Loss: " + (st.wins == 0 ? "-" : rupees(st.avgWin())) + " / "
+                    + (st.losses == 0 ? "-" : rupees(st.avgLoss())));
+            repaint();
+        }
     }
 
     // =========================================================================
     // SECTION 4 MONTHLY P&L HEATMAP CALENDAR & QUANT GRID
     // =========================================================================
 
+    /** The current month, Monday-Friday, coloured by the realized P&L of each day. */
     private static class MonthlyHeatmapCard extends JPanel {
+        private final JLabel title = new JLabel();
+        private final JLabel perf = new JLabel();
+        private final JLabel greenDays = new JLabel();
+        private final JLabel redDays = new JLabel();
+        private final JPanel cal = new JPanel(new GridLayout(0, 5, 4, 4));
+        private String shownKey = "";
+
         public MonthlyHeatmapCard() {
             setLayout(new BorderLayout(0, 8));
             setOpaque(false);
 
             JPanel top = new JPanel(new BorderLayout());
             top.setOpaque(false);
-            JLabel title = new JLabel("November 2024 P&L Matrix · Active Audit Month");
             title.setFont(new Font("Inter", Font.BOLD, 13));
             title.setForeground(Theme.TXT_PRIMARY);
             top.add(title, BorderLayout.WEST);
 
             JPanel rightTags = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
             rightTags.setOpaque(false);
-            JLabel perf = new JLabel("Monthly Performance: +₹4,82,410.00");
             perf.setFont(Theme.MICRO);
-            perf.setForeground(Theme.GAIN);
-            JLabel greenDays = new JLabel("18 Green Days");
             greenDays.setFont(Theme.MICRO);
             greenDays.setForeground(Theme.GAIN);
-            JLabel redDays = new JLabel("4 Red Days");
             redDays.setFont(Theme.MICRO);
             redDays.setForeground(Theme.LOSS);
             rightTags.add(perf);
@@ -2084,12 +2149,31 @@ public class HistoryPanel extends BasePanel {
             top.add(rightTags, BorderLayout.EAST);
             add(top, BorderLayout.NORTH);
 
-            // Calendar Grid (5 cols: Mon - Fri)
-            JPanel cal = new JPanel(new GridLayout(4, 5, 4, 4));
             cal.setOpaque(false);
+            add(cal, BorderLayout.CENTER);
+            updateData(TradeStats.of(List.of()));
+        }
 
-            String[] days = {"Mon", "Tue", "Wed", "Thu", "Fri"};
-            for (String d : days) {
+        public void updateData(TradeStats st) {
+            java.time.YearMonth month = java.time.YearMonth.now();
+            java.util.Map<java.time.LocalDate, Double> days = st.dailyPnl.subMap(month.atDay(1), true, month.atEndOfMonth(), true);
+            String key = month + days.toString();
+            if (key.equals(shownKey)) {
+                return;    // nothing changed: do not rebuild the grid every second
+            }
+            shownKey = key;
+
+            double total = days.values().stream().mapToDouble(Double::doubleValue).sum();
+            long green = days.values().stream().filter(v -> v > 0).count();
+            long red = days.values().stream().filter(v -> v < 0).count();
+            title.setText(month.format(DateTimeFormatter.ofPattern("MMMM yyyy")) + " P&L Matrix · Realized by day");
+            perf.setText("Monthly Performance: " + rupees(total));
+            perf.setForeground(total >= 0 ? Theme.GAIN : Theme.LOSS);
+            greenDays.setText(green + " Green Days");
+            redDays.setText(red + " Red Days");
+
+            cal.removeAll();
+            for (String d : new String[]{"Mon", "Tue", "Wed", "Thu", "Fri"}) {
                 JLabel l = new JLabel(d, SwingConstants.CENTER);
                 l.setFont(Theme.TINY);
                 l.setForeground(Theme.TXT_MUTED);
@@ -2097,66 +2181,87 @@ public class HistoryPanel extends BasePanel {
                 l.setOpaque(true);
                 cal.add(l);
             }
-
-            // 15 Trading Session Cells
-            cal.add(buildCalCell("01 Nov", "+₹14.2k", true));
-            cal.add(buildCalCell("04 Nov", "+₹18.4k", true));
-            cal.add(buildCalCell("05 Nov", "+₹42.1k", true));
-            cal.add(buildCalCell("06 Nov", "-₹8.9k", false));
-            cal.add(buildCalCell("07 Nov", "-₹8.2k", false));
-
-            cal.add(buildCalCell("08 Nov", "+₹29.8k", true));
-            cal.add(buildCalCell("11 Nov", "+₹95.0k", true));
-            cal.add(buildCalCell("12 Nov", "-₹14.5k", false));
-            cal.add(buildCalCell("13 Nov", "+₹54.3k", true));
-            cal.add(buildCalCell("14 Nov", "+₹1,03.9k", true));
-
-            cal.add(buildCalCell("15 Nov", "+₹26.5k", true));
-            cal.add(buildCalCell("18 Nov", "+₹34.1k", true));
-            cal.add(buildCalCell("19 Nov", "+₹48.2k", true));
-            cal.add(buildCalCell("20 Nov", "-₹6.4k", false));
-            cal.add(buildCalCell("21 Nov", "+₹62.7k", true));
-
-            add(cal, BorderLayout.CENTER);
+            // blank cells before the first weekday so the dates sit under the right day name
+            java.time.LocalDate first = month.atDay(1);
+            int lead = first.getDayOfWeek().getValue() - 1;   // Monday = 0
+            if (lead >= 5) {
+                lead = 0;                                       // month starts on a weekend
+            }
+            for (int i = 0; i < lead; i++) {
+                cal.add(blankCell());
+            }
+            for (int d = 1; d <= month.lengthOfMonth(); d++) {
+                java.time.LocalDate date = month.atDay(d);
+                if (date.getDayOfWeek().getValue() >= 6) {
+                    continue;   // weekends are not shown
+                }
+                Double pnl = days.get(date);
+                cal.add(buildCalCell(date.format(DateTimeFormatter.ofPattern("dd MMM")), pnl));
+            }
+            cal.revalidate();
+            cal.repaint();
         }
 
-        private JPanel buildCalCell(String date, String pnl, boolean gain) {
+        private JPanel blankCell() {
+            JPanel p = new JPanel();
+            p.setOpaque(false);
+            return p;
+        }
+
+        private JPanel buildCalCell(String date, Double pnl) {
+            boolean has = pnl != null && pnl != 0;
+            boolean gain = has && pnl > 0;
             JPanel p = new JPanel(new BorderLayout());
-            p.setBackground(gain ? new Color(34, 197, 94, 25) : new Color(239, 68, 68, 25));
+            p.setBackground(!has ? Theme.SURFACE_SUB : gain ? new Color(34, 197, 94, 25) : new Color(239, 68, 68, 25));
             p.setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(gain ? new Color(34, 197, 94, 60) : new Color(239, 68, 68, 60), 1),
+                    BorderFactory.createLineBorder(!has ? Theme.BORDER_SUBTLE
+                            : gain ? new Color(34, 197, 94, 60) : new Color(239, 68, 68, 60), 1),
                     BorderFactory.createEmptyBorder(2, 4, 2, 4)
             ));
             JLabel d = new JLabel(date);
             d.setFont(Theme.TINY);
             d.setForeground(Theme.TXT_MUTED);
-            JLabel v = new JLabel(pnl, SwingConstants.RIGHT);
+            String text = "-";
+            if (has) {
+                double inr = pnl * USD_TO_INR;
+                text = Math.abs(inr) >= 1000
+                        ? String.format(Locale.US, "%s₹%.1fk", inr < 0 ? "-" : "+", Math.abs(inr) / 1000)
+                        : String.format(Locale.US, "%s₹%.0f", inr < 0 ? "-" : "+", Math.abs(inr));
+            }
+            JLabel v = new JLabel(text, SwingConstants.RIGHT);
             v.setFont(new Font("JetBrains Mono", Font.BOLD, 9));
-            v.setForeground(gain ? Theme.GAIN : Theme.LOSS);
+            v.setForeground(!has ? Theme.TXT_MUTED : gain ? Theme.GAIN : Theme.LOSS);
             p.add(d, BorderLayout.WEST);
             p.add(v, BorderLayout.EAST);
             return p;
         }
-
-        public void updateData(List<AuditRowData> rows) { repaint(); }
     }
 
+    /** Eight quant tiles, every one calculated from the real trades. */
     private static class QuantMetricsGrid extends JPanel {
+        private final JLabel profitFactor = new JLabel("n/a");
+        private final JLabel avgHolding = new JLabel("n/a");
+        private final JLabel riskReward = new JLabel("n/a");
+        private final JLabel winStreak = new JLabel("0 Trades");
+        private final JLabel lossStreak = new JLabel("0 Trades");
+        private final JLabel sharpe = new JLabel("n/a");
+        private final JLabel bestAsset = new JLabel("-");
+        private final JLabel worstAsset = new JLabel("-");
+
         public QuantMetricsGrid() {
             setLayout(new GridLayout(1, 8, 6, 0));
             setOpaque(false);
-
-            add(buildQuantTile("Profit Factor", "2.41", Theme.GAIN));
-            add(buildQuantTile("Avg Holding", "4.2 Days", Theme.TXT_PRIMARY));
-            add(buildQuantTile("Risk / Reward", "1 : 2.14", Theme.ACCENT));
-            add(buildQuantTile("Max Win Streak", "7 Trades", Theme.GAIN));
-            add(buildQuantTile("Max Loss Streak", "2 Trades", Theme.LOSS));
-            add(buildQuantTile("Sharpe Ratio", "1.88", Theme.TXT_PRIMARY));
-            add(buildQuantTile("Best Asset", "NVDA (+₹3.18L)", Theme.GAIN));
-            add(buildQuantTile("Worst Asset", "TSLA (-₹38.2k)", Theme.LOSS));
+            add(buildQuantTile("Profit Factor", profitFactor, Theme.GAIN));
+            add(buildQuantTile("Avg Holding", avgHolding, Theme.TXT_PRIMARY));
+            add(buildQuantTile("Risk / Reward", riskReward, Theme.ACCENT));
+            add(buildQuantTile("Max Win Streak", winStreak, Theme.GAIN));
+            add(buildQuantTile("Max Loss Streak", lossStreak, Theme.LOSS));
+            add(buildQuantTile("Sharpe Ratio", sharpe, Theme.TXT_PRIMARY));
+            add(buildQuantTile("Best Asset", bestAsset, Theme.GAIN));
+            add(buildQuantTile("Worst Asset", worstAsset, Theme.LOSS));
         }
 
-        private JPanel buildQuantTile(String title, String val, Color c) {
+        private JPanel buildQuantTile(String title, JLabel v, Color c) {
             JPanel p = new JPanel();
             p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
             p.setBackground(Theme.SURFACE_SUB);
@@ -2167,7 +2272,6 @@ public class HistoryPanel extends BasePanel {
             JLabel t = new JLabel(title.toUpperCase());
             t.setFont(new Font("Inter", Font.BOLD, 8));
             t.setForeground(Theme.TXT_MUTED);
-            JLabel v = new JLabel(val);
             v.setFont(new Font("JetBrains Mono", Font.BOLD, 10));
             v.setForeground(c);
             p.add(t);
@@ -2176,6 +2280,25 @@ public class HistoryPanel extends BasePanel {
             return p;
         }
 
-        public void updateData(List<AuditRowData> rows) { repaint(); }
+        public void updateData(TradeStats st, PerformanceReport report) {
+            profitFactor.setText(PerformanceAnalyzer.format(st.profitFactor(), "x"));
+            double days = st.avgHoldingDays;
+            avgHolding.setText(Double.isNaN(days) ? "n/a"
+                    : days < 1 ? String.format(Locale.US, "%.1f Hours", days * 24) : String.format(Locale.US, "%.1f Days", days));
+            double rr = st.rewardToRisk();
+            riskReward.setText(Double.isNaN(rr) ? "n/a" : String.format(Locale.US, "1 : %.2f", rr));
+            winStreak.setText(st.maxWinStreak + " Trades");
+            lossStreak.setText(st.maxLossStreak + " Trades");
+            sharpe.setText(report == null ? "n/a" : PerformanceAnalyzer.format(report.sharpeRatio(), ""));
+
+            java.util.Map.Entry<String, Double> best = null;
+            java.util.Map.Entry<String, Double> worst = null;
+            for (java.util.Map.Entry<String, Double> e : st.pnlBySymbol.entrySet()) {
+                if (best == null || e.getValue() > best.getValue()) best = e;
+                if (worst == null || e.getValue() < worst.getValue()) worst = e;
+            }
+            bestAsset.setText(best == null ? "-" : best.getKey() + " (" + rupees(best.getValue()) + ")");
+            worstAsset.setText(worst == null ? "-" : worst.getKey() + " (" + rupees(worst.getValue()) + ")");
+        }
     }
 }
