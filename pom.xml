@@ -35,6 +35,12 @@
             <artifactId>javafx-swing</artifactId>
             <version>${javafx.version}</version>
         </dependency>
+        <!-- Reads the JSON answers from the market data APIs -->
+        <dependency>
+            <groupId>org.json</groupId>
+            <artifactId>json</artifactId>
+            <version>20240303</version>
+        </dependency>
         <!-- Unit tests -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
