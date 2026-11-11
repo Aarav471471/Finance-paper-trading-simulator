@@ -42,7 +42,6 @@ import com.papertrader.util.AppConfig;
 
 import javax.swing.SwingUtilities;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -96,7 +95,7 @@ public class App {
         Theme.applyDefaults();
 
         // 1. Data and storage
-        Path dataDir = Paths.get("data");
+        Path dataDir = AppConfig.load().dataDirectory();   // "data" by default, see AppConfig
         Repository<User, String> userRepository = new FileUserRepository(dataDir);
         TransactionRepository transactionRepository = new FileTransactionRepository(dataDir);
 

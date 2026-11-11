@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Every window opens maximized and without a title bar, so the app fills the browser view. -->
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+  <applications>
+    <application class="*" type="normal">
+      <decor>no</decor>
+      <maximized>yes</maximized>
+    </application>
+  </applications>
+</openbox_config>

@@ -1,0 +1,110 @@
+# Builds the desktop installers (Windows .exe, macOS .dmg, Linux .deb) with jpackage
+# and attaches them to a GitHub Release, so the download page can link to them.
+# Runs on every push to main that changes the app, or by hand from the Actions tab.
+name: Build installers
+
+on:
+  push:
+    branches: [main]
+    paths: ["src/main/**", "pom.xml", ".github/workflows/release-installers.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-installers
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            type: exe
+            asset: PaperTrader-Windows.exe
+            extra: --win-menu --win-shortcut --win-dir-chooser --win-per-user-install
+          - os: macos-latest
+            type: dmg
+            asset: PaperTrader-macOS.dmg
+            extra: ""
+          - os: ubuntu-latest
+            type: deb
+            asset: PaperTrader-Linux.deb
+            extra: --linux-shortcut --linux-menu-group Finance
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      # jpackage needs the WiX 3 toolset to make a Windows installer
+      - name: Install WiX (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command candle.exe -ErrorAction SilentlyContinue)) {
+            choco install wixtoolset --version 3.14.1 -y --no-progress
+            $wix = Get-ChildItem "C:\Program Files (x86)" -Filter "WiX Toolset v3*" -Directory | Select-Object -First 1
+            "$($wix.FullName)\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          }
+
+      - name: Build the jar (with tests)
+        run: mvn -B package
+
+      - name: Package the installer
+        shell: bash
+        run: |
+          VERSION=$(mvn -q -B help:evaluate -Dexpression=project.version -DforceStdout)
+          mkdir -p jp-input dist
+          cp "target/paper-trading-simulator-${VERSION}.jar" jp-input/papertrader.jar
+          jpackage --type ${{ matrix.type }} \
+            --name PaperTrader \
+            --app-version "${VERSION}" \
+            --vendor "PaperTrader" \
+            --description "Paper trading simulator with live prices and 3D charts" \
+            --input jp-input \
+            --main-jar papertrader.jar \
+            --main-class com.papertrader.App \
+            --java-options "-Dpapertrader.dataDir=~/.papertrader" \
+            --dest dist \
+            ${{ matrix.extra }}
+          mv dist/*.${{ matrix.type }} "dist/${{ matrix.asset }}"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Read the version
+        run: echo "VERSION=$(grep -m1 -oP '(?<=<version>)[^<]+' pom.xml)" >> "$GITHUB_ENV"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: PaperTrader ${{ env.VERSION }}
+          make_latest: "true"
+          body: |
+            Desktop installers for PaperTrader 3D.
+
+            - **Windows**: PaperTrader-Windows.exe
+            - **macOS (Apple Silicon)**: PaperTrader-macOS.dmg. The app is not signed, so the first time right-click it and choose Open.
+            - **Linux (Debian/Ubuntu)**: PaperTrader-Linux.deb, install with `sudo apt install ./PaperTrader-Linux.deb`
+
+            Your accounts and trades are saved in a `.papertrader` folder in your home folder.
+          files: dist/*
