@@ -51,6 +51,23 @@ public final class AppConfig {
         return !"simulated".equalsIgnoreCase(get("data.mode", "PAPERTRADER_DATA_MODE", "live"));
     }
 
+    /**
+     * Folder where accounts, trades and equity history are saved.
+     * Default "data" next to pom.xml. A leading "~" means the user's home folder,
+     * which the installed app uses because its own folder may be read-only.
+     */
+    public Path dataDirectory() {
+        String dir = System.getProperty("papertrader.dataDir");
+        if (dir == null || dir.isBlank()) {
+            dir = get("data.dir", "PAPERTRADER_DATA_DIR", "data");
+        }
+        dir = dir.trim();
+        if (dir.equals("~") || dir.startsWith("~/") || dir.startsWith("~\\")) {
+            return Paths.get(System.getProperty("user.home"), dir.substring(1).replaceFirst("^[/\\\\]", ""));
+        }
+        return Paths.get(dir);
+    }
+
     /** Empty string when no key is set. */
     public String finnhubApiKey() {
         return get("finnhub.apiKey", "FINNHUB_API_KEY", "");
