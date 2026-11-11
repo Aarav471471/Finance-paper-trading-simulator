@@ -1,6 +1,6 @@
 # PaperTrader 3D in the browser.
 # Runs the Java desktop app on a virtual screen (Xvfb) and streams it to the
-# browser with noVNC. Used for the Hugging Face Space, also works locally:
+# browser with noVNC. Run it on your own machine or any Docker host:
 #   docker build -t papertrader . && docker run -p 7860:7860 papertrader
 #   then open http://localhost:7860
 
@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         fonts-dejavu fonts-noto-core \
     && rm -rf /var/lib/apt/lists/*
 
-# Hugging Face runs the container as user 1000
+# Run as a normal user (uid 1000), not root
 RUN useradd -m -u 1000 user && mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 COPY --from=build /build/target/paper-trading-simulator-1.0.0.jar /app/papertrader.jar
 COPY docker/start.sh /app/start.sh
