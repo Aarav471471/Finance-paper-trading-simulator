@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PaperTrader 3D</title>
+<meta name="description" content="Practise trading stocks, crypto and ETFs with virtual money, real live prices and 3D charts.">
+<style>
+  :root {
+    --bg: #0b0f17; --panel: #121826; --line: #1f2937; --text: #e5e7eb;
+    --muted: #94a3b8; --blue: #3b82f6; --green: #22c55e;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
+  header { padding: 64px 0 40px; }
+  h1 { font-size: clamp(2rem, 5vw, 3.2rem); margin: 0 0 12px; letter-spacing: -0.02em; }
+  h1 span { color: var(--green); }
+  .lead { color: var(--muted); font-size: 1.15rem; max-width: 680px; margin: 0 0 28px; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 12px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 10px;
+         text-decoration: none; font-weight: 600; border: 1px solid var(--line); color: var(--text);
+         background: var(--panel); }
+  .btn:hover { border-color: var(--blue); }
+  .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .btn.primary:hover { filter: brightness(1.1); }
+  .note { color: var(--muted); font-size: 0.9rem; margin-top: 12px; }
+  .hero-shot { margin-top: 40px; width: 100%; border-radius: 12px; border: 1px solid var(--line); display: block; }
+  section { padding: 40px 0; border-top: 1px solid var(--line); }
+  h2 { font-size: 1.5rem; margin: 0 0 20px; }
+  .downloads { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  .card h3 { margin: 0 0 6px; font-size: 1.1rem; }
+  .card p { margin: 0 0 16px; color: var(--muted); font-size: 0.92rem; }
+  .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  figure { margin: 0; }
+  figure img { width: 100%; border-radius: 10px; border: 1px solid var(--line); display: block; }
+  figcaption { color: var(--muted); font-size: 0.9rem; margin-top: 6px; }
+  ul.features { columns: 2 280px; padding-left: 20px; margin: 0; }
+  ul.features li { margin-bottom: 8px; break-inside: avoid; }
+  footer { padding: 32px 0 48px; color: var(--muted); font-size: 0.9rem; border-top: 1px solid var(--line); }
+  a { color: #60a5fa; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>PaperTrader <span>3D</span></h1>
+    <p class="lead">Practise trading stocks, crypto and ETFs with virtual money. Real live prices,
+      four order types, candlestick charts, backtesting, trading bots, risk analytics and 3D visuals.</p>
+    <div class="buttons">
+      <a class="btn primary" id="try-online" href="__SPACE_URL__">Try it in your browser</a>
+      <a class="btn" href="#download">Download for your computer</a>
+      <a class="btn" href="__REPO_URL__">Source code</a>
+    </div>
+    <p class="note" id="try-note">The browser demo is shared by everyone who opens it and may take a minute to wake up.
+      Log in with <strong>demo / demo</strong>.</p>
+    <img class="hero-shot" src="screenshots/02-dashboard.png" alt="PaperTrader dashboard with a 3D portfolio chart">
+  </header>
+
+  <section id="download">
+    <h2>Download</h2>
+    <div class="downloads">
+      <div class="card">
+        <h3>Windows</h3>
+        <p>Installer for Windows 10 and 11. Adds a Start menu entry and a desktop shortcut.</p>
+        <a class="btn primary" href="__REPO_URL__/releases/latest/download/PaperTrader-Windows.exe">Download .exe</a>
+      </div>
+      <div class="card">
+        <h3>macOS</h3>
+        <p>For Apple Silicon Macs. The app is not signed, so the first time right-click it and choose Open.</p>
+        <a class="btn primary" href="__REPO_URL__/releases/latest/download/PaperTrader-macOS.dmg">Download .dmg</a>
+      </div>
+      <div class="card">
+        <h3>Linux</h3>
+        <p>For Debian and Ubuntu. Install with <code>sudo apt install ./PaperTrader-Linux.deb</code>.</p>
+        <a class="btn primary" href="__REPO_URL__/releases/latest/download/PaperTrader-Linux.deb">Download .deb</a>
+      </div>
+    </div>
+    <p class="note">No Java install needed, it is bundled. Your accounts and trades are saved on your own computer.
+      Any other system: install Java 17 and run the jar from the <a href="__REPO_URL__">source code</a>.</p>
+  </section>
+
+  <section>
+    <h2>What you can do</h2>
+    <ul class="features">
+      <li>Trade with <strong>real live prices</strong> from Binance, Finnhub and Yahoo Finance, including NSE shares</li>
+      <li>Market, Limit, Stop-Loss and Take-Profit orders with realistic spread and slippage</li>
+      <li>Candlestick, line and Heikin-Ashi charts with SMA, EMA, RSI, MACD and VWAP</li>
+      <li>Backtest strategies on a year of real daily candles</li>
+      <li>Run auto-trading bots that follow a strategy or your own price rule</li>
+      <li>Sharpe, Sortino, max drawdown, win rate and profit factor</li>
+      <li>Trade history analytics with a capital gains tax estimate</li>
+      <li>Leaderboard, multiple users and a rotatable 3D portfolio chart</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Screenshots</h2>
+    <div class="gallery">
+      <figure><img src="screenshots/07-market-candles.png" alt="" loading="lazy"><figcaption>Stock details with real candlesticks</figcaption></figure>
+      <figure><img src="screenshots/08-trade-orderbook.png" alt="" loading="lazy"><figcaption>Trade terminal and order book</figcaption></figure>
+      <figure><img src="screenshots/09-backtest.png" alt="" loading="lazy"><figcaption>Backtesting with historical replay</figcaption></figure>
+      <figure><img src="screenshots/11-analytics.png" alt="" loading="lazy"><figcaption>Risk analytics</figcaption></figure>
+      <figure><img src="screenshots/10-autotrade.png" alt="" loading="lazy"><figcaption>Auto-trading bots</figcaption></figure>
+      <figure><img src="screenshots/12-leaderboard.png" alt="" loading="lazy"><figcaption>Leaderboard</figcaption></figure>
+    </div>
+  </section>
+
+  <footer>Paper trading only, no real money. Prices are for practice and may be delayed.</footer>
+</div>
+<script>
+  // Hide the browser demo button if the site was built without a Space address.
+  var t = document.getElementById('try-online');
+  if (t.getAttribute('href').indexOf('__SPACE') === 0) {
+    t.style.display = 'none';
+    document.getElementById('try-note').style.display = 'none';
+  }
+</script>
+</body>
+</html>
