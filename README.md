@@ -52,28 +52,21 @@ java -jar target/paper-trading-simulator-1.0.0.jar
 
 Log in with **demo / demo** (created on first run with some sample holdings), or create your own account.
 
-## Use it online
+## Download and run
 
 | Way | Where | Notes |
 |---|---|---|
-| **Browser demo** | Hugging Face Space (link on the download page) | The real app streamed to your browser. Shared by everyone who opens it; accounts reset when the Space restarts. |
 | **Installers** | [Latest release](../../releases/latest) / GitHub Pages download page | Windows `.exe`, macOS `.dmg` (Apple Silicon), Linux `.deb`. Java is bundled. Data is saved in `~/.papertrader`. |
-| **Docker** | your own machine | `docker build -t papertrader . && docker run -p 7860:7860 papertrader`, then open http://localhost:7860 |
+| **Docker (in a browser)** | your own machine or server | `docker build -t papertrader . && docker run -p 7860:7860 papertrader`, then open http://localhost:7860. The app runs on a virtual screen streamed with noVNC. |
 
 ### How deployment works
 
-Three GitHub Actions run on every push to `main`:
+Two GitHub Actions run on every push to `main`:
 
-- `deploy-huggingface.yml` uploads the `Dockerfile`, `pom.xml`, `src/` and `docker/` to a Hugging Face Space, which builds the image. The container runs the app on a virtual screen (Xvfb + Openbox) and serves it to the browser with noVNC on port 7860.
 - `release-installers.yml` builds the installers with `jpackage` on Windows, macOS and Linux and attaches them to the `v<version>` GitHub Release.
 - `pages.yml` publishes `site/index.html` (the download page) with the screenshots to GitHub Pages.
 
-One-time setup by a repo admin:
-
-1. **Secret `HF_TOKEN`** (Settings, Secrets and variables, Actions): a Hugging Face access token with *write* permission.
-2. **Variable `HF_SPACE`**: the Space name, e.g. `your-hf-username/papertrader`. The page's "Try it in your browser" button uses it.
-3. Optional **secret `FINNHUB_API_KEY`**: copied into the Space; without it stocks use Yahoo Finance.
-4. **Settings, Pages, Source: GitHub Actions**.
+One-time setup by a repo admin: **Settings, Pages, Source: GitHub Actions**.
 
 Where data is stored: `data/` by default, or the folder in `PAPERTRADER_DATA_DIR` / `data.dir` in `config.properties` / `-Dpapertrader.dataDir=...` (a leading `~` means your home folder).
 
