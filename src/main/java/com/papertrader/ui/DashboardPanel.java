@@ -108,6 +108,10 @@ public class DashboardPanel extends BasePanel {
         this.watchlistPanel = new WatchlistPanel(marketService, asset -> {
             orderTerminal.setTargetAsset(asset);
         });
+        // Double-click a row: open that stock's own chart (the dashboard chart is the whole portfolio)
+        this.watchlistPanel.setOnOpenAsset(asset -> {
+            if (onNavigate != null) onNavigate.accept("StockDetails:" + asset.getSymbol());
+        });
 
         // Header & Ticker
         this.terminalHeader = new TerminalHeader(query -> watchlistPanel.selectSymbol(query));
@@ -375,5 +379,10 @@ public class DashboardPanel extends BasePanel {
 
         // 7. Footer Strip
         terminalFooter.updateData(user, portfolioService, marketService);
+    }
+
+    /** Called every second by MainFrame with the price feed state. */
+    public void setFeedLive(boolean live) {
+        terminalHeader.setFeedLive(live);
     }
 }

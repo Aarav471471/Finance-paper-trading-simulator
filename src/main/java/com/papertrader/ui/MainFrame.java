@@ -402,6 +402,9 @@ public class MainFrame extends JFrame {
 
         yahooStatus.setText(hasYahoo ? "Connected" : "Simulated");
         yahooStatus.setForeground(hasYahoo ? Theme.GAIN : Theme.WARNING);
+        if (pages.get("Dashboard") instanceof DashboardPanel dashboard) {
+            dashboard.setFeedLive(hasBinance || hasYahoo);
+        }
 
         // every 15 seconds, save the account value for the Analytics page
         if (authService.isLoggedIn() && ++secondsSinceSnapshot >= 15) {

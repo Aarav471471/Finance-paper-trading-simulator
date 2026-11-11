@@ -37,6 +37,7 @@ import com.papertrader.service.MarketService;
 import com.papertrader.service.PortfolioService;
 import com.papertrader.service.TradingService;
 import com.papertrader.ui.MainFrame;
+import com.papertrader.ui.StartupScreen;
 import com.papertrader.ui.Theme;
 import com.papertrader.util.AppConfig;
 
@@ -59,9 +60,22 @@ public class App {
     public static final double STARTING_CASH = 100_000.0;
 
     public static void main(String[] args) {
-        List<Asset> assets = AssetCatalog.defaultAssets();
-        PriceFeed priceFeed = createPriceFeed(AppConfig.load(), assets);   // may take a few seconds (internet)
-        SwingUtilities.invokeLater(() -> start(assets, priceFeed));      // Swing must be used from its own UI thread
+        AppConfig config = AppConfig.load();
+        Path log = StartupScreen.logToFile(config.dataDirectory());      // the installed app has no console
+        StartupScreen.installCrashDialog(log);
+        try {
+            StartupScreen.show("Downloading live prices...");          // so a slow download doesn't look like nothing happened
+            List<Asset> assets = AssetCatalog.defaultAssets();
+            PriceFeed priceFeed = createPriceFeed(config, assets);      // may take a few seconds (internet)
+            SwingUtilities.invokeLater(() -> {                          // Swing must be used from its own UI thread
+                start(assets, priceFeed);
+                StartupScreen.markStarted();
+            });
+        } catch (RuntimeException | Error e) {
+            e.printStackTrace();
+            StartupScreen.showError(e, log);
+            System.exit(1);
+        }
     }
 
     /**
@@ -82,7 +96,18 @@ public class App {
 
         System.out.println("Downloading live prices...");
         LivePriceFeed live = new LivePriceFeed(assets, providers);
-        if (!live.loadInitialPrices()) {
+        boolean loaded = live.loadInitialPrices();
+        for (int attempt = 2; !loaded && attempt <= 3; attempt++) {    // a slow first connection is common
+            System.out.println("Live prices not reachable yet, trying again (" + attempt + "/3)...");
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            loaded = live.loadInitialPrices();
+        }
+        if (!loaded) {
             System.out.println("No market data reachable (" + live.getStatusText() + "). Using simulated prices.");
             return new SimulatedPriceFeed(assets, 1000);
         }
