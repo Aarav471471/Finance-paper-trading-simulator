@@ -37,6 +37,7 @@ import com.papertrader.service.MarketService;
 import com.papertrader.service.PortfolioService;
 import com.papertrader.service.TradingService;
 import com.papertrader.ui.MainFrame;
+import com.papertrader.ui.StartupScreen;
 import com.papertrader.ui.Theme;
 import com.papertrader.util.AppConfig;
 
@@ -59,9 +60,22 @@ public class App {
     public static final double STARTING_CASH = 100_000.0;
 
     public static void main(String[] args) {
-        List<Asset> assets = AssetCatalog.defaultAssets();
-        PriceFeed priceFeed = createPriceFeed(AppConfig.load(), assets);   // may take a few seconds (internet)
-        SwingUtilities.invokeLater(() -> start(assets, priceFeed));      // Swing must be used from its own UI thread
+        AppConfig config = AppConfig.load();
+        Path log = StartupScreen.logToFile(config.dataDirectory());      // the installed app has no console
+        StartupScreen.installCrashDialog(log);
+        try {
+            StartupScreen.show("Downloading live prices...");          // so a slow download doesn't look like nothing happened
+            List<Asset> assets = AssetCatalog.defaultAssets();
+            PriceFeed priceFeed = createPriceFeed(config, assets);      // may take a few seconds (internet)
+            SwingUtilities.invokeLater(() -> {                          // Swing must be used from its own UI thread
+                start(assets, priceFeed);
+                StartupScreen.markStarted();
+            });
+        } catch (RuntimeException | Error e) {
+            e.printStackTrace();
+            StartupScreen.showError(e, log);
+            System.exit(1);
+        }
     }
 
     /**
