@@ -9,8 +9,11 @@ import java.nio.file.Paths;
 import java.util.Properties;
 
 /**
- * Reads settings from "config.properties" (next to pom.xml) or from environment variables.
- * Environment variables win, so a key never has to be written into a file.
+ * Reads settings, first match wins:
+ *   1. environment variables
+ *   2. JVM options "-Dpapertrader.<name>=..." (the installers pass the Finnhub key this way)
+ *   3. "config.properties" in the working folder (next to pom.xml)
+ *   4. "~/.papertrader/config.properties" (for the installed app)
  *
  *   data.mode       / PAPERTRADER_DATA_MODE : live (default) or simulated
  *   finnhub.apiKey  / FINNHUB_API_KEY       : free key from finnhub.io
@@ -24,21 +27,31 @@ public final class AppConfig {
 
     public static AppConfig load() {
         AppConfig config = new AppConfig();
-        Path file = Paths.get("config.properties");
-        if (Files.exists(file)) {
-            try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-                config.properties.load(reader);
-            } catch (IOException e) {
-                System.err.println("Could not read config.properties: " + e.getMessage());
-            }
-        }
+        // Load the home-folder file first so the working-folder file overrides it.
+        config.loadFile(Paths.get(System.getProperty("user.home"), ".papertrader", "config.properties"));
+        config.loadFile(Paths.get("config.properties"));
         return config;
+    }
+
+    private void loadFile(Path file) {
+        if (!Files.exists(file)) {
+            return;
+        }
+        try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+            properties.load(reader);
+        } catch (IOException e) {
+            System.err.println("Could not read " + file + ": " + e.getMessage());
+        }
     }
 
     private String get(String propertyName, String envName, String defaultValue) {
         String fromEnv = System.getenv(envName);
         if (fromEnv != null && !fromEnv.isBlank()) {
             return fromEnv.trim();
+        }
+        String fromJvm = System.getProperty("papertrader." + propertyName);
+        if (fromJvm != null && !fromJvm.isBlank()) {
+            return fromJvm.trim();
         }
         String fromFile = properties.getProperty(propertyName);
         if (fromFile != null && !fromFile.isBlank()) {
