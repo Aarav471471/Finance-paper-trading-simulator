@@ -1,7 +1,5 @@
 # Publishes the download page (site/) to GitHub Pages.
 # One-time setup: repo Settings -> Pages -> Source: "GitHub Actions".
-# The "Try it in your browser" button uses the HF_SPACE repo variable
-# (e.g. "your-hf-username/papertrader"); without it the button is hidden.
 name: Download page (GitHub Pages)
 
 on:
@@ -29,18 +27,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build the page
         env:
-          HF_SPACE: ${{ vars.HF_SPACE }}
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |
           mkdir _site
           cp site/index.html _site/
           cp -r docs/screenshots _site/screenshots
           sed -i "s|__REPO_URL__|${REPO_URL}|g" _site/index.html
-          if [ -n "$HF_SPACE" ]; then
-            OWNER=$(echo "${HF_SPACE%%/*}" | tr '[:upper:]' '[:lower:]')
-            NAME=$(echo "${HF_SPACE##*/}" | tr '[:upper:]_.' '[:lower:]--')
-            sed -i "s|__SPACE_URL__|https://${OWNER}-${NAME}.hf.space|g" _site/index.html
-          fi
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
       - id: deployment
