@@ -34,6 +34,9 @@ public class TerminalHeader extends JPanel {
     private final JLabel clockLabel = new JLabel("14:32:08 UTC");
     private final JTextField searchInput = new JTextField();
     private final JLabel avatarLabel = new JLabel("AD", JLabel.CENTER);
+    private final JLabel liveText = new JLabel("LIVE");
+    private JPanel liveBadge;
+    private boolean feedLive = true;
 
     private static final DateTimeFormatter UTC_FMT = DateTimeFormatter.ofPattern("HH:mm:ss 'UTC'");
 
@@ -113,12 +116,12 @@ public class TerminalHeader extends JPanel {
         right.setOpaque(false);
 
         // LIVE badge
-        JPanel liveBadge = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0)) {
+        liveBadge = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0)) {
             @Override
             protected void paintComponent(Graphics g) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(Theme.GAIN);
+                g2.setColor(feedLive ? Theme.GAIN : Theme.WARNING);
                 g2.fillOval(4, 7, 5, 5);
                 g2.dispose();
                 super.paintComponent(g);
@@ -130,7 +133,6 @@ public class TerminalHeader extends JPanel {
                 new Theme.RoundedBorder(new Color(34, 197, 94, 80), 4, 1),
                 BorderFactory.createEmptyBorder(1, 12, 1, 5)));
 
-        JLabel liveText = new JLabel("LIVE");
         liveText.setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 9f));
         liveText.setForeground(Theme.GAIN);
         liveBadge.add(liveText);
@@ -171,6 +173,19 @@ public class TerminalHeader extends JPanel {
         Timer clockTimer = new Timer(1000, e -> updateClock());
         clockTimer.start();
         updateClock();
+    }
+
+    /** Green "LIVE" when at least one real price source answers, amber "SIMULATED" otherwise. */
+    public void setFeedLive(boolean live) {
+        if (live == feedLive) {
+            return;
+        }
+        feedLive = live;
+        liveText.setText(live ? "LIVE" : "SIMULATED");
+        liveText.setForeground(live ? Theme.GAIN : Theme.WARNING);
+        liveBadge.setBackground(live ? Theme.GREEN_BG : new Color(245, 158, 11, 30));
+        liveBadge.revalidate();
+        liveBadge.repaint();
     }
 
     private void updateClock() {
