@@ -43,6 +43,9 @@ public class WatchlistPanel extends JPanel {
 
     private final MarketService marketService;
     private final Consumer<Asset> onSelectAsset;
+    private Consumer<Asset> onOpenAsset;
+    private String lastClickSymbol;
+    private long lastClickTime;
 
     private String activeTab = "ALL"; // ALL, GAINERS, LOSERS
     private String searchQuery = "";
@@ -243,6 +246,11 @@ public class WatchlistPanel extends JPanel {
         return footer;
     }
 
+    /** What a double-click on a row does (e.g. open Stock Details). */
+    public void setOnOpenAsset(Consumer<Asset> onOpenAsset) {
+        this.onOpenAsset = onOpenAsset;
+    }
+
     public void selectSymbol(String symbol) {
         this.selectedSymbol = symbol;
         marketService.findBySymbol(symbol).ifPresent(asset -> {
@@ -286,6 +294,7 @@ public class WatchlistPanel extends JPanel {
             setOpaque(false);
             setPreferredSize(new Dimension(100, 36));
             setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            setToolTipText("Click to trade " + asset.getSymbol() + ", double-click to open its chart");
 
             addMouseListener(new MouseAdapter() {
                 @Override
@@ -305,6 +314,17 @@ public class WatchlistPanel extends JPanel {
                     selectedSymbol = asset.getSymbol();
                     if (onSelectAsset != null) {
                         onSelectAsset.accept(asset);
+                    }
+                    // The list is rebuilt after every click, so the second click of a double-click
+                    // lands on a new row: detect it by time and symbol instead of getClickCount().
+                    long now = System.currentTimeMillis();
+                    boolean doubleClick = asset.getSymbol().equals(lastClickSymbol) && now - lastClickTime < 500;
+                    lastClickSymbol = asset.getSymbol();
+                    lastClickTime = now;
+                    if ((doubleClick || e.getClickCount() >= 2) && onOpenAsset != null) {
+                        lastClickSymbol = null;
+                        onOpenAsset.accept(asset);
+                        return;
                     }
                     WatchlistPanel.this.refreshList();
                 }

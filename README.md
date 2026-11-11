@@ -86,6 +86,8 @@ It works without any setup (Binance + Yahoo). For the most accurate stock prices
 1. Get a key at <https://finnhub.io/register>.
 2. Copy `config.example.properties` to `config.properties` and set `finnhub.apiKey=YOUR_KEY`
    (or set the environment variable `FINNHUB_API_KEY`). `config.properties` is git-ignored.
+   For the installed app, put the file in the `.papertrader` folder in your home folder
+   (`C:\Users\<you>\.papertrader\config.properties` on Windows, `~/.papertrader/config.properties` on Mac/Linux).
 
 The sidebar shows each source's status, e.g. `Binance: live 16:30:05`. "Change %" is measured from the previous close
 (24 h ago for crypto). US stocks only move during US market hours (about 8:00 PM–2:30 AM IST), and crypto moves 24/7.
