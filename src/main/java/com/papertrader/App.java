@@ -96,7 +96,18 @@ public class App {
 
         System.out.println("Downloading live prices...");
         LivePriceFeed live = new LivePriceFeed(assets, providers);
-        if (!live.loadInitialPrices()) {
+        boolean loaded = live.loadInitialPrices();
+        for (int attempt = 2; !loaded && attempt <= 3; attempt++) {    // a slow first connection is common
+            System.out.println("Live prices not reachable yet, trying again (" + attempt + "/3)...");
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            loaded = live.loadInitialPrices();
+        }
+        if (!loaded) {
             System.out.println("No market data reachable (" + live.getStatusText() + "). Using simulated prices.");
             return new SimulatedPriceFeed(assets, 1000);
         }
