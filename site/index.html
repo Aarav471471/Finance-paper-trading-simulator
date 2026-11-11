@@ -50,12 +50,9 @@
     <p class="lead">Practise trading stocks, crypto and ETFs with virtual money. Real live prices,
       four order types, candlestick charts, backtesting, trading bots, risk analytics and 3D visuals.</p>
     <div class="buttons">
-      <a class="btn primary" id="try-online" href="__SPACE_URL__">Try it in your browser</a>
-      <a class="btn" href="#download">Download for your computer</a>
+      <a class="btn primary" href="#download">Download for your computer</a>
       <a class="btn" href="__REPO_URL__">Source code</a>
     </div>
-    <p class="note" id="try-note">The browser demo is shared by everyone who opens it and may take a minute to wake up.
-      Log in with <strong>demo / demo</strong>.</p>
     <img class="hero-shot" src="screenshots/02-dashboard.png" alt="PaperTrader dashboard with a 3D portfolio chart">
   </header>
 
@@ -110,13 +107,5 @@
 
   <footer>Paper trading only, no real money. Prices are for practice and may be delayed.</footer>
 </div>
-<script>
-  // Hide the browser demo button if the site was built without a Space address.
-  var t = document.getElementById('try-online');
-  if (t.getAttribute('href').indexOf('__SPACE') === 0) {
-    t.style.display = 'none';
-    document.getElementById('try-note').style.display = 'none';
-  }
-</script>
 </body>
 </html>
