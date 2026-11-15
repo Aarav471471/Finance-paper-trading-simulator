@@ -17,6 +17,9 @@ import java.util.Properties;
  *
  *   data.mode       / PAPERTRADER_DATA_MODE : live (default) or simulated
  *   finnhub.apiKey  / FINNHUB_API_KEY       : free key from finnhub.io
+ *   groww.apiKey    / GROWW_API_KEY         : Groww Trade API key      } NSE prices for Indian
+ *   groww.apiSecret / GROWW_API_SECRET      : Groww Trade API secret   } shares; or instead
+ *   groww.accessToken / GROWW_ACCESS_TOKEN  : a ready-made Groww access token (expires daily)
  */
 public final class AppConfig {
 
@@ -84,5 +87,20 @@ public final class AppConfig {
     /** Empty string when no key is set. */
     public String finnhubApiKey() {
         return get("finnhub.apiKey", "FINNHUB_API_KEY", "");
+    }
+
+    /** Groww Trade API key, empty when not set. */
+    public String growwApiKey() {
+        return get("groww.apiKey", "GROWW_API_KEY", "");
+    }
+
+    /** Groww Trade API secret, empty when not set. */
+    public String growwApiSecret() {
+        return get("groww.apiSecret", "GROWW_API_SECRET", "");
+    }
+
+    /** A Groww access token generated on the Groww Cloud page, empty when not set. */
+    public String growwAccessToken() {
+        return get("groww.accessToken", "GROWW_ACCESS_TOKEN", "");
     }
 }

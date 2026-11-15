@@ -9,8 +9,8 @@ import java.util.Map;
 
 /**
  * A website/API that can give real prices for some kinds of assets.
- * Implemented by FinnhubQuoteProvider and YahooQuoteProvider (stocks + ETFs)
- * and BinanceQuoteProvider (crypto). LivePriceFeed only knows this interface.
+ * Implemented by FinnhubQuoteProvider and YahooQuoteProvider (stocks + ETFs),
+ * GrowwQuoteProvider (Indian NSE shares) and BinanceQuoteProvider (crypto). LivePriceFeed only knows this interface.
  */
 public interface QuoteProvider {
 
@@ -25,4 +25,9 @@ public interface QuoteProvider {
 
     /** How often to ask, in seconds (free plans have rate limits). */
     int getRefreshSeconds();
+
+    /** Extra words for the status bar after a fetch, e.g. "via Yahoo Finance". Empty by default. */
+    default String getStatusNote() {
+        return "";
+    }
 }
