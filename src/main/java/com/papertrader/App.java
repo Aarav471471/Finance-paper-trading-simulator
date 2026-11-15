@@ -13,7 +13,10 @@ import com.papertrader.service.ChartService;
 import com.papertrader.service.LeaderboardService;
 import com.papertrader.exception.SimulatorException;
 import com.papertrader.feed.BinanceQuoteProvider;
+import com.papertrader.feed.FallbackQuoteProvider;
 import com.papertrader.feed.FinnhubQuoteProvider;
+import com.papertrader.feed.GrowwQuoteProvider;
+import com.papertrader.feed.GrowwSession;
 import com.papertrader.feed.LivePriceFeed;
 import com.papertrader.feed.SimulatedPriceFeed;
 import com.papertrader.feed.YahooQuoteProvider;
@@ -79,7 +82,7 @@ public class App {
     }
 
     /**
-     * Live prices by default: Binance for crypto, Finnhub (with a free key) or Yahoo Finance
+     * Live prices by default: Binance for crypto, Groww (with your key) for Indian NSE shares, Finnhub (with a free key) or Yahoo Finance
      * (no key) for stocks and ETFs. Falls back to simulated prices when there is no internet.
      */
     private static PriceFeed createPriceFeed(AppConfig config, List<Asset> assets) {
@@ -87,7 +90,12 @@ public class App {
             return new SimulatedPriceFeed(assets, 1000);
         }
         List<QuoteProvider> providers = new ArrayList<>();
-        providers.add(new BinanceQuoteProvider());
+        providers.add(new BinanceQuoteProvider());                  // crypto
+        GrowwSession groww = new GrowwSession(config.growwApiKey(), config.growwApiSecret(), config.growwAccessToken());
+        if (groww.isConfigured()) {
+            // Indian NSE shares from Groww; Yahoo Finance takes over if Groww fails (e.g. key not approved today)
+            providers.add(new FallbackQuoteProvider(new GrowwQuoteProvider(groww), new YahooQuoteProvider()));
+        }
         String finnhubKey = config.finnhubApiKey();
         if (!finnhubKey.isEmpty()) {
             providers.add(new FinnhubQuoteProvider(finnhubKey));   // US stocks / ETFs
