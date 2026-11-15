@@ -1,7 +1,7 @@
 # PaperTrader 3D: Finance Paper Trading Simulator
 
 A Java desktop app for practising trading **stocks, crypto and ETFs** with virtual money.
-It uses **real live market prices** (Binance for crypto, Finnhub / Yahoo Finance for stocks and ETFs),
+It uses **real live market prices** (Binance for crypto, Groww for Indian NSE shares, Finnhub / Yahoo Finance for stocks and ETFs),
 with Market / Limit / Stop-Loss / Take-Profit orders, realistic fills (bid/ask spread + slippage),
 candlestick charts, an order book, **backtesting with historical replay**, **risk analytics**
 (Sharpe, Sortino, max drawdown, win rate, profit factor), **auto-trading bots**, a **leaderboard**, and **3D visuals**
@@ -27,7 +27,7 @@ and low coupling, an SRS using **FODA**, 4 UML diagrams, and the **Spiral** SDLC
 | Orders | Market, Limit, Stop-Loss (SL-M), Take-Profit (TP). Waiting orders execute automatically on price updates. |
 | Realistic fills | Buy at the **ask**, sell at the **bid** (spread depends on asset type), plus random **slippage** and **market impact** for big orders. Limit orders never fill worse than their limit. 0.1% brokerage fee. |
 | Portfolio | Cash, holdings value, net worth, **realized P&L** (locked in by sells) and **unrealized P&L**, average entry price per position. |
-| Market data | Real live prices (Binance, Finnhub / Yahoo Finance) with offline simulation fallback. |
+| Market data | Real live prices (Binance, Groww, Finnhub / Yahoo Finance) with automatic fallback to Yahoo and then offline simulation. |
 | Charts | Candlestick / line / Heikin-Ashi chart built from **real price history** (Binance, Yahoo Finance; NSE stocks via `.NS`). Ranges 1D / 1W / 1M / 3M / 1Y / 5Y / ALL use 5-minute, 1-hour, daily and weekly candles. SMA 20, EMA 50, real RSI(14), MACD and VWAP. Live prices keep the newest candle moving. |
 | Order book | Level 2 **market depth**: 5 bid and 5 ask levels built around the real bid/ask, with the spread and bid/ask ratio. |
 | Backtesting | Replay a year of **real daily candles** at **1x / 2x / 5x** or instantly. Strategies: SMA crossover, RSI, Buy & Hold, or your own price rule. Buy/sell arrows on the chart, equity curve, and comparison to buy & hold. |
@@ -45,7 +45,7 @@ Requirements: **Java 17+** and **Maven** (IntelliJ IDEA / Eclipse / VS Code can 
 
 ```bash
 mvn compile exec:java          # start the app
-mvn test                       # run the 68 unit tests
+mvn test                       # run the 77 unit tests
 mvn package                    # build target/paper-trading-simulator-1.0.0.jar
 java -jar target/paper-trading-simulator-1.0.0.jar
 ```
@@ -75,8 +75,9 @@ Where data is stored: `data/` by default, or the folder in `PAPERTRADER_DATA_DIR
 | Assets | Source | Key needed? | Refresh |
 |---|---|---|---|
 | Crypto (BTC, ETH, SOL) | **Binance**: the exchange's own last traded price (USDT ≈ USD) | No | every 3 s |
+| Indian NSE shares (RELIANCE, TCS, INFY ...) | **Groww Trade API**: official NSE quotes (read-only, falls back to Yahoo if Groww fails) | Your Groww key | every 10 s |
 | Stocks & ETFs (AAPL, MSFT, GOOGL, TSLA, AMZN, SPY, QQQ) | **Finnhub**: official real-time US exchange quotes | Free key | every 15 s |
-| Stocks & ETFs (when no Finnhub key), Indian stocks (`.NS`) | **Yahoo Finance** | No | every 15 s |
+| Stocks & ETFs (when no Finnhub key), Indian stocks when no Groww key (`.NS`) | **Yahoo Finance** | No | every 15 s |
 | Day/52-week stats, indices, VIX, USD/INR | **Yahoo Finance** chart API | No | every 60 s |
 | Fundamentals, holders, analyst target, news | **Yahoo Finance** quoteSummary + search | No | every 30 min / 10 min |
 | Total crypto market cap | **CoinGecko** `/global` | No | every 5 min |
@@ -88,6 +89,24 @@ It works without any setup (Binance + Yahoo). For the most accurate stock prices
    (or set the environment variable `FINNHUB_API_KEY`). `config.properties` is git-ignored.
    For the installed app, put the file in the `.papertrader` folder in your home folder
    (`C:\Users\<you>\.papertrader\config.properties` on Windows, `~/.papertrader/config.properties` on Mac/Linux).
+
+### Groww (Indian shares)
+
+Groww is used **only to read prices**. The app never sends orders to Groww; every trade stays paper trading.
+
+1. On Groww, subscribe to the Trading API and open **Groww Cloud, API Keys**. Create a key and copy the key and secret.
+2. Give them to the app in **one** of these ways (never commit them; `config.properties` and `.env` are git-ignored):
+   - environment variables `GROWW_API_KEY` and `GROWW_API_SECRET`
+   - `groww.apiKey=` and `groww.apiSecret=` in `config.properties` (same places as the Finnhub key above)
+   - Docker / your server: copy `.env.example` to `.env`, fill it in, and run
+     `docker run --env-file .env -p 7860:7860 papertrader`. On a hosting service, add the same names as
+     secret environment variables in its settings page.
+3. Groww asks you to **approve the key once a day** on the Groww Cloud page. The app then logs in by itself
+   (`SHA-256(secret + timestamp)` checksum) and logs in again when the token expires.
+
+Instead of key + secret you can set `GROWW_ACCESS_TOKEN` to a token made on the Groww Cloud page, but it expires every day.
+If Groww is not set up, not approved today, or down, Indian prices come from Yahoo Finance and the sidebar shows
+`Groww: live 10:15:02 via Yahoo Finance (...)` so you can see why.
 
 The sidebar shows each source's status, e.g. `Binance: live 16:30:05`. "Change %" is measured from the previous close
 (24 h ago for crypto). US stocks only move during US market hours (about 8:00 PM–2:30 AM IST), and crypto moves 24/7.
@@ -130,6 +149,7 @@ src/main/java/com/papertrader/
 ├── interfaces/              PriceFeed, PriceListener, QuoteProvider, HistoryProvider, FeeCalculator, EquityRepository,
 │                            Repository<T,ID>, TransactionRepository, Exportable
 ├── feed/                    LivePriceFeed (real prices) + Binance/Finnhub/Yahoo QuoteProviders,
+│                            GrowwQuoteProvider + GrowwSession (login), FallbackQuoteProvider,
 │                            YahooFundamentalsProvider, CoinGeckoGlobalProvider, Http, YahooSymbols,
 │                            SimulatedPriceFeed (offline random-walk prices)
 ├── fees/                    PercentageFeeCalculator, FlatFeeCalculator
@@ -142,7 +162,7 @@ src/main/java/com/papertrader/
     ├── components/          Portfolio/History/Analytics/Backtest/AutoTrade/Leaderboard panels;
     │                        StatCard, LineChartPanel, CandleChartPanel, OrderBookPanel, StrategyPicker, TickerPanel, renderers
     └── three/               Base3DView ← Coin3DView, Portfolio3DView (JavaFX 3D)
-src/test/java/com/papertrader/   68 JUnit tests
+src/test/java/com/papertrader/   77 JUnit tests
 docs/
 ├── SRS.md                   Software Requirements Specification (FODA)
 ├── SpiralModel.md           SDLC: 4 spiral loops

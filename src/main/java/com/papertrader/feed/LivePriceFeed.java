@@ -160,7 +160,9 @@ public class LivePriceFeed implements PriceFeed {
     }
 
     private void markOk(QuoteProvider provider) {
-        status.put(provider.getName(), provider.getName() + ": live " + LocalTime.now().format(TIME));
+        String note = provider.getStatusNote();
+        status.put(provider.getName(), provider.getName() + ": live " + LocalTime.now().format(TIME)
+                + (note.isEmpty() ? "" : " " + note));
     }
 
     private void markFailed(QuoteProvider provider, Exception e) {
