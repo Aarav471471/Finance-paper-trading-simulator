@@ -11,6 +11,7 @@ import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JToggleButton;
 import javax.swing.SwingConstants;
@@ -21,6 +22,7 @@ import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Cursor;
+import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
@@ -30,6 +32,8 @@ import java.awt.GridLayout;
 import java.awt.RenderingHints;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.io.File;
+import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -61,8 +65,12 @@ public class MainFrame extends JFrame {
 
     private final JLabel userAvatarLabel = new JLabel("AD", SwingConstants.CENTER);
     private final JLabel usernameLabel = new JLabel("Admin");
+    private final JLabel binanceDot = new JLabel("●");
     private final JLabel binanceStatus = new JLabel("Connected");
+    private final JLabel yahooDot = new JLabel("●");
     private final JLabel yahooStatus = new JLabel("Connected");
+    private final JLabel growwDot = new JLabel("●");
+    private final JLabel growwStatus = new JLabel("Checking...");
     private final PriceFeed priceFeed;
     private BasePanel currentPage;
 
@@ -214,7 +222,7 @@ public class MainFrame extends JFrame {
         container.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(40, 52, 73, 140)),
                 BorderFactory.createEmptyBorder(8, 12, 4, 12)));
-        container.setMaximumSize(new Dimension(Integer.MAX_VALUE, 90));
+        container.setMaximumSize(new Dimension(Integer.MAX_VALUE, 120));
 
         JLabel title = new JLabel("LIVE FEEDS");
         title.setFont(Theme.MICRO.deriveFont(Font.BOLD, 8f));
@@ -223,14 +231,16 @@ public class MainFrame extends JFrame {
         container.add(title);
         container.add(Box.createVerticalStrut(5));
 
-        container.add(createFeedRow("BINANCE", binanceStatus));
+        container.add(createFeedRow("BINANCE", binanceDot, binanceStatus));
         container.add(Box.createVerticalStrut(3));
-        container.add(createFeedRow("YAHOO FIN", yahooStatus));
+        container.add(createFeedRow("YAHOO FIN", yahooDot, yahooStatus));
+        container.add(Box.createVerticalStrut(3));
+        container.add(createFeedRow("GROWW", growwDot, growwStatus));
 
         return container;
     }
 
-    private JPanel createFeedRow(String source, JLabel status) {
+    private JPanel createFeedRow(String source, JLabel dot, JLabel status) {
         JPanel row = new JPanel(new BorderLayout());
         row.setBackground(Theme.SURFACE_SUB);
         row.setBorder(BorderFactory.createCompoundBorder(
@@ -245,7 +255,6 @@ public class MainFrame extends JFrame {
         JPanel statP = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
         statP.setOpaque(false);
 
-        JLabel dot = new JLabel("●");
         dot.setFont(new Font("SansSerif", Font.BOLD, 8));
         dot.setForeground(Theme.GAIN);
 
@@ -257,7 +266,85 @@ public class MainFrame extends JFrame {
 
         row.add(src, BorderLayout.WEST);
         row.add(statP, BorderLayout.EAST);
+
+        if ("GROWW".equals(source)) {
+            row.setCursor(new Cursor(Cursor.HAND_CURSOR));
+            row.setToolTipText("Click to view Groww Trade API details & session approval");
+            row.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    showGrowwStatusDialog();
+                }
+            });
+        }
         return row;
+    }
+
+    private void showGrowwStatusDialog() {
+        String st = priceFeed != null ? priceFeed.getStatusText() : "";
+        boolean isDirect = st.toLowerCase().contains("groww: live") && !st.toLowerCase().contains("via yahoo finance");
+        boolean isFallback = st.toLowerCase().contains("groww: live") && st.toLowerCase().contains("via yahoo finance");
+        boolean isConfigured = st.toLowerCase().contains("groww");
+
+        StringBuilder msg = new StringBuilder();
+        msg.append("<html><div style='width:340px; font-family:sans-serif;'>");
+        msg.append("<h3 style='margin:0 0 8px 0; color:#38BDF8;'>Groww Trade API Status</h3>");
+
+        if (isDirect) {
+            msg.append("<p style='color:#22C55E;'><b>● Status: Connected (Live Direct)</b></p>");
+            msg.append("<p>Receiving real-time quotes directly from Groww Trade API for Indian NSE stocks.</p>");
+        } else if (isFallback) {
+            msg.append("<p style='color:#F59E0B;'><b>● Status: Daily Approval Required</b></p>");
+            msg.append("<p>Groww Trade API requires daily session authorization on Groww Cloud.</p>");
+            msg.append("<p style='color:#94A3B8; font-size:11px;'><i>Active Fallback: Indian NSE quotes are currently being served via Yahoo Finance seamlessly.</i></p>");
+        } else if (isConfigured) {
+            msg.append("<p style='color:#EF4444;'><b>● Status: Offline</b></p>");
+            msg.append("<p>Groww API could not be reached. Yahoo Finance is active as backup.</p>");
+        } else {
+            msg.append("<p style='color:#94A3B8;'><b>● Status: Not Configured</b></p>");
+            msg.append("<p>No Groww credentials found in <code>config.properties</code>.</p>");
+            msg.append("<p style='color:#94A3B8; font-size:11px;'><i>Quotes for Indian stocks are actively fetched from Yahoo Finance.</i></p>");
+        }
+        msg.append("</div></html>");
+
+        Object[] options;
+        if (isFallback) {
+            options = new Object[]{"Approve on Groww Cloud", "Close"};
+        } else {
+            options = new Object[]{"Open config.properties", "Close"};
+        }
+
+        int choice = JOptionPane.showOptionDialog(
+                this,
+                msg.toString(),
+                "Groww Trade API Integration",
+                JOptionPane.DEFAULT_OPTION,
+                JOptionPane.INFORMATION_MESSAGE,
+                null,
+                options,
+                options[0]
+        );
+
+        if (choice == 0) {
+            if (isFallback) {
+                try {
+                    if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                        Desktop.getDesktop().browse(URI.create("https://groww.in/trade-api"));
+                    }
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(this, "Could not open browser: " + ex.getMessage());
+                }
+            } else {
+                try {
+                    File cfg = new File("config.properties");
+                    if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
+                        Desktop.getDesktop().open(cfg);
+                    }
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(this, "Could not open config file: " + ex.getMessage());
+                }
+            }
+        }
     }
 
     private JPanel buildSidebarBottom() {
@@ -399,11 +486,40 @@ public class MainFrame extends JFrame {
 
         binanceStatus.setText(hasBinance ? "Connected" : "Simulated");
         binanceStatus.setForeground(hasBinance ? Theme.GAIN : Theme.WARNING);
+        binanceDot.setForeground(hasBinance ? Theme.GAIN : Theme.WARNING);
 
         yahooStatus.setText(hasYahoo ? "Connected" : "Simulated");
         yahooStatus.setForeground(hasYahoo ? Theme.GAIN : Theme.WARNING);
+        yahooDot.setForeground(hasYahoo ? Theme.GAIN : Theme.WARNING);
+
+        boolean hasGrowwDirect = st.toLowerCase().contains("groww: live") && !st.toLowerCase().contains("via yahoo finance");
+        boolean hasGrowwFallback = st.toLowerCase().contains("groww: live") && st.toLowerCase().contains("via yahoo finance");
+        boolean hasGroww = st.toLowerCase().contains("groww");
+
+        if (hasGrowwDirect) {
+            growwStatus.setText("Connected");
+            growwStatus.setForeground(Theme.GAIN);
+            growwDot.setForeground(Theme.GAIN);
+            growwStatus.setToolTipText("Groww Trade API: Connected (Live direct NSE quotes)");
+        } else if (hasGrowwFallback) {
+            growwStatus.setText("Approval Req");
+            growwStatus.setForeground(Theme.WARNING);
+            growwDot.setForeground(Theme.WARNING);
+            growwStatus.setToolTipText("Groww Trade API: Daily approval required (Yahoo fallback active)");
+        } else if (hasGroww) {
+            growwStatus.setText("Offline");
+            growwStatus.setForeground(Theme.LOSS);
+            growwDot.setForeground(Theme.LOSS);
+            growwStatus.setToolTipText("Groww Trade API: Offline (Yahoo fallback active)");
+        } else {
+            growwStatus.setText("Not Set");
+            growwStatus.setForeground(Theme.TXT_MUTED);
+            growwDot.setForeground(Theme.TXT_MUTED);
+            growwStatus.setToolTipText("Groww Trade API: Not configured in config.properties");
+        }
+
         if (pages.get("Dashboard") instanceof DashboardPanel dashboard) {
-            dashboard.setFeedLive(hasBinance || hasYahoo);
+            dashboard.setFeedLive(hasBinance || hasYahoo || hasGrowwDirect || hasGrowwFallback);
         }
 
         // every 15 seconds, save the account value for the Analytics page
