@@ -58,6 +58,11 @@ public class CandleChartPanel extends JPanel {
     private double panOffset = 0.0;
     private final JLabel lblZoomBadge = new JLabel("100%");
 
+    // Maximize / Minimize toggle
+    private boolean isMaximized = false;
+    private java.util.function.Consumer<Boolean> onToggleMaximize;
+    private JButton btnMaximize;
+
     public CandleChartPanel() {
         setLayout(new BorderLayout());
         setBackground(Theme.CARD);
@@ -77,11 +82,13 @@ public class CandleChartPanel extends JPanel {
         lblZoomBadge.setBorder(BorderFactory.createEmptyBorder(0, 4, 0, 4));
         JButton btnZoomIn = createZoomBtn("+", "Zoom In (or Scroll Up)", e -> zoomIn());
         JButton btnReset = createZoomBtn("⟲", "Reset Zoom / Pan (or Double Click)", e -> resetZoom());
+        btnMaximize = createZoomBtn("⛶", "Maximize Chart", e -> toggleMaximize());
 
         zoomGroup.add(btnZoomOut);
         zoomGroup.add(lblZoomBadge);
         zoomGroup.add(btnZoomIn);
         zoomGroup.add(btnReset);
+        zoomGroup.add(btnMaximize);
 
         topBar.add(zoomGroup);
         add(topBar, BorderLayout.NORTH);
@@ -174,6 +181,29 @@ public class CandleChartPanel extends JPanel {
         panOffset = 0.0;
         updateZoomBadge();
         repaint();
+    }
+
+    public void setOnToggleMaximize(java.util.function.Consumer<Boolean> listener) {
+        this.onToggleMaximize = listener;
+    }
+
+    public void toggleMaximize() {
+        setMaximized(!isMaximized);
+    }
+
+    public void setMaximized(boolean max) {
+        this.isMaximized = max;
+        if (btnMaximize != null) {
+            btnMaximize.setText(max ? "🗗" : "⛶");
+            btnMaximize.setToolTipText(max ? "Restore Chart" : "Maximize Chart");
+        }
+        if (onToggleMaximize != null) {
+            onToggleMaximize.accept(max);
+        }
+    }
+
+    public boolean isMaximized() {
+        return isMaximized;
     }
 
     public void setZoom(double newZoom) {

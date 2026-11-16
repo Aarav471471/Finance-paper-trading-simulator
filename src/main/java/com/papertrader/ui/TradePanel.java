@@ -174,6 +174,11 @@ public class TradePanel extends BasePanel {
     private final JButton tabBtnOpen = new JButton("Active Open Orders (0)");
     private final JButton tabBtnExec = new JButton("Order History / Executions (0)");
 
+    private final CardLayout mainCardLayout = new CardLayout();
+    private final JPanel mainCardContainer = new JPanel(mainCardLayout);
+    private final JPanel maximizedChartContainer = new JPanel(new BorderLayout());
+    private final JPanel leftWorkspaceCol = new JPanel();
+
     private final OpenOrdersTableModel openOrdersModel = new OpenOrdersTableModel();
     private final JTable openOrdersTable = new JTable(openOrdersModel);
     private final ExecHistoryTableModel execHistoryModel = new ExecHistoryTableModel();
@@ -242,7 +247,30 @@ public class TradePanel extends BasePanel {
         scrollPane.setOpaque(false);
         scrollPane.getViewport().setOpaque(false);
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-        add(scrollPane, BorderLayout.CENTER);
+        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+
+        mainCardContainer.setOpaque(false);
+        maximizedChartContainer.setOpaque(false);
+        maximizedChartContainer.setBorder(BorderFactory.createEmptyBorder(0, 10, 10, 10));
+
+        mainCardContainer.add(scrollPane, "NORMAL");
+        mainCardContainer.add(maximizedChartContainer, "MAXIMIZED");
+        add(mainCardContainer, BorderLayout.CENTER);
+
+        chartPanel.setOnToggleMaximize(max -> {
+            if (max) {
+                leftWorkspaceCol.remove(chartPanel);
+                maximizedChartContainer.removeAll();
+                maximizedChartContainer.add(chartPanel, BorderLayout.CENTER);
+                mainCardLayout.show(mainCardContainer, "MAXIMIZED");
+            } else {
+                maximizedChartContainer.removeAll();
+                leftWorkspaceCol.add(chartPanel, 0);
+                mainCardLayout.show(mainCardContainer, "NORMAL");
+            }
+            mainCardContainer.revalidate();
+            mainCardContainer.repaint();
+        });
 
         // Wire inputs and calculations
         wireEvents();
@@ -398,14 +426,14 @@ public class TradePanel extends BasePanel {
         card.setBackground(Theme.CARD_BG);
         card.setBorder(BorderFactory.createCompoundBorder(
                 new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 6, 1),
-                BorderFactory.createEmptyBorder(6, 10, 6, 10)));
+                BorderFactory.createEmptyBorder(6, 6, 6, 6)));
 
         // Top Row: Title + Pill
         JPanel top = new JPanel(new BorderLayout());
         top.setOpaque(false);
 
         JLabel tLbl = new JLabel(title);
-        tLbl.setFont(Theme.MICRO.deriveFont(Font.BOLD, 8.5f));
+        tLbl.setFont(Theme.MICRO.deriveFont(Font.BOLD, 8.0f));
         tLbl.setForeground(Theme.TXT_MUTED);
 
         pLbl.setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 8.5f));
@@ -671,19 +699,19 @@ public class TradePanel extends BasePanel {
         gbc.weighty = 1.0;
         gbc.insets = new Insets(0, 0, 0, 4);
 
-        JPanel leftCol = new JPanel();
-        leftCol.setLayout(new BoxLayout(leftCol, BoxLayout.Y_AXIS));
-        leftCol.setOpaque(false);
+        leftWorkspaceCol.removeAll();
+        leftWorkspaceCol.setLayout(new BoxLayout(leftWorkspaceCol, BoxLayout.Y_AXIS));
+        leftWorkspaceCol.setOpaque(false);
 
         chartPanel.setPreferredSize(new Dimension(600, 360));
         chartPanel.setMinimumSize(new Dimension(450, 320));
-        leftCol.add(chartPanel);
-        leftCol.add(Box.createVerticalStrut(8));
+        leftWorkspaceCol.add(chartPanel);
+        leftWorkspaceCol.add(Box.createVerticalStrut(8));
 
         depthPanel.setPreferredSize(new Dimension(600, 210));
-        leftCol.add(depthPanel);
+        leftWorkspaceCol.add(depthPanel);
 
-        workspace.add(leftCol, gbc);
+        workspace.add(leftWorkspaceCol, gbc);
 
         // RIGHT COLUMN (35%): Order Execution Ticket + Sizing Telemetry
         gbc.gridx = 1;
@@ -1196,10 +1224,12 @@ public class TradePanel extends BasePanel {
         JScrollPane spOpen = new JScrollPane(openOrdersTable);
         spOpen.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.BORDER_CUSTOM));
         spOpen.getViewport().setBackground(new Color(0x10, 0x16, 0x22));
+        spOpen.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
 
         JScrollPane spExec = new JScrollPane(execHistoryTable);
         spExec.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.BORDER_CUSTOM));
         spExec.getViewport().setBackground(new Color(0x10, 0x16, 0x22));
+        spExec.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
 
         bottomCardsContainer.add(spOpen, "OPEN");
         bottomCardsContainer.add(spExec, "EXEC");
@@ -1225,6 +1255,7 @@ public class TradePanel extends BasePanel {
         center.setHorizontalAlignment(SwingConstants.CENTER);
 
         openOrdersTable.setRowHeight(26);
+        openOrdersTable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
         openOrdersTable.setBackground(new Color(0x10, 0x16, 0x22));
         openOrdersTable.setForeground(Color.WHITE);
         openOrdersTable.setFont(Theme.MONO_TINY);
@@ -1248,6 +1279,7 @@ public class TradePanel extends BasePanel {
         });
 
         execHistoryTable.setRowHeight(26);
+        execHistoryTable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
         execHistoryTable.setBackground(new Color(0x10, 0x16, 0x22));
         execHistoryTable.setForeground(Color.WHITE);
         execHistoryTable.setFont(Theme.MONO_TINY);

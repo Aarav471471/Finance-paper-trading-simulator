@@ -77,8 +77,8 @@ public class OrderTerminalPanel extends JPanel {
         setOpaque(false);
         setBackground(Theme.CARD_BG);
         setBorder(Theme.terminalCardBorder());
-        setPreferredSize(new Dimension(260, 310));
-        setMinimumSize(new Dimension(220, 290));
+        setPreferredSize(new Dimension(260, 280));
+        setMinimumSize(new Dimension(210, 240));
 
         // Default asset
         List<Asset> assets = marketService.getAllAssets();
@@ -276,17 +276,10 @@ public class OrderTerminalPanel extends JPanel {
         submitBtn.setFont(Theme.MONO_BODY.deriveFont(Font.BOLD, 10f));
         submitBtn.setFocusPainted(false);
         submitBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        submitBtn.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
+        submitBtn.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
         submitBtn.addActionListener(e -> executeTrade());
-        form.add(javax.swing.Box.createVerticalStrut(4));
-        form.add(submitBtn);
-
-        JLabel disclaim = new JLabel("Paper trading only. No real money involved.", JLabel.CENTER);
-        disclaim.setFont(Theme.MICRO.deriveFont(Font.PLAIN, 8f));
-        disclaim.setForeground(Theme.TXT_MUTED);
-        disclaim.setAlignmentX(JLabel.CENTER_ALIGNMENT);
         form.add(javax.swing.Box.createVerticalStrut(2));
-        form.add(disclaim);
+        form.add(submitBtn);
 
         add(form, BorderLayout.CENTER);
         recalculate();

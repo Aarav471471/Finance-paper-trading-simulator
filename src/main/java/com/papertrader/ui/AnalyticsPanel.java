@@ -54,11 +54,36 @@ public class AnalyticsPanel extends BasePanel {
         }
         equityChart.setBorder(Theme.cardBorder());
 
-        JPanel content = new JPanel(new BorderLayout(0, 14));
-        content.setOpaque(false);
-        content.add(cards, BorderLayout.NORTH);
-        content.add(equityChart, BorderLayout.CENTER);
-        add(content, BorderLayout.CENTER);
+        JPanel normalContent = new JPanel(new BorderLayout(0, 14));
+        normalContent.setOpaque(false);
+        normalContent.add(cards, BorderLayout.NORTH);
+        normalContent.add(equityChart, BorderLayout.CENTER);
+
+        java.awt.CardLayout cardLayout = new java.awt.CardLayout();
+        JPanel container = new JPanel(cardLayout);
+        container.setOpaque(false);
+
+        JPanel maxContent = new JPanel(new BorderLayout());
+        maxContent.setOpaque(false);
+
+        container.add(normalContent, "NORMAL");
+        container.add(maxContent, "MAXIMIZED");
+        add(container, BorderLayout.CENTER);
+
+        equityChart.setOnToggleMaximize(max -> {
+            if (max) {
+                normalContent.remove(equityChart);
+                maxContent.removeAll();
+                maxContent.add(equityChart, BorderLayout.CENTER);
+                cardLayout.show(container, "MAXIMIZED");
+            } else {
+                maxContent.removeAll();
+                normalContent.add(equityChart, BorderLayout.CENTER);
+                cardLayout.show(container, "NORMAL");
+            }
+            container.revalidate();
+            container.repaint();
+        });
     }
 
     @Override

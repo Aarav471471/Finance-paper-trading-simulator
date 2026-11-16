@@ -47,6 +47,7 @@ import javax.swing.table.TableCellEditor;
 import javax.swing.table.TableCellRenderer;
 import java.awt.BasicStroke;
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Cursor;
@@ -121,6 +122,10 @@ public class PortfolioPanel extends BasePanel {
 
     // Row 2: Performance Chart & Asset Allocation Donut
     private PortfolioPerformanceChart performanceChart;
+    private final CardLayout mainCardLayout = new CardLayout();
+    private final JPanel mainCardContainer = new JPanel(mainCardLayout);
+    private final JPanel maximizedChartContainer = new JPanel(new BorderLayout());
+    private final JPanel chartCard = new JPanel(new BorderLayout());
     private AnalyticsService analytics;
     private double startingCash = 100000.0;
     private final AssetAllocationCard allocationCard = new AssetAllocationCard();
@@ -206,7 +211,29 @@ public class PortfolioPanel extends BasePanel {
         scrollPane.getViewport().setBackground(Theme.APP_BG);
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
         scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        add(scrollPane, BorderLayout.CENTER);
+
+        mainCardContainer.setOpaque(false);
+        maximizedChartContainer.setOpaque(false);
+        maximizedChartContainer.setBorder(BorderFactory.createEmptyBorder(12, 16, 20, 16));
+
+        mainCardContainer.add(scrollPane, "NORMAL");
+        mainCardContainer.add(maximizedChartContainer, "MAXIMIZED");
+        add(mainCardContainer, BorderLayout.CENTER);
+
+        performanceChart.setOnToggleMaximize(max -> {
+            if (max) {
+                chartCard.remove(performanceChart);
+                maximizedChartContainer.removeAll();
+                maximizedChartContainer.add(performanceChart, BorderLayout.CENTER);
+                mainCardLayout.show(mainCardContainer, "MAXIMIZED");
+            } else {
+                maximizedChartContainer.removeAll();
+                chartCard.add(performanceChart, BorderLayout.CENTER);
+                mainCardLayout.show(mainCardContainer, "NORMAL");
+            }
+            mainCardContainer.revalidate();
+            mainCardContainer.repaint();
+        });
 
         // Start Clock Timer (1 sec tick)
         Timer clockTimer = new Timer(1000, e -> updateClock());
@@ -370,7 +397,8 @@ public class PortfolioPanel extends BasePanel {
         row.setOpaque(false);
 
         // Left 65%: Performance Chart Card
-        JPanel chartCard = new JPanel(new BorderLayout());
+        chartCard.removeAll();
+        chartCard.setLayout(new BorderLayout());
         chartCard.setBackground(Theme.CARD_BG);
         chartCard.setBorder(BorderFactory.createCompoundBorder(
                 new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 10, 1),
@@ -478,24 +506,30 @@ public class PortfolioPanel extends BasePanel {
         holdingsTable.getTableHeader().setFont(Theme.MONO_SMALL);
         holdingsTable.getTableHeader().setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER_CUSTOM));
         holdingsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        holdingsTable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
 
-        // Custom Column Renderers
-        holdingsTable.getColumnModel().getColumn(0).setPreferredWidth(170);
+        // Custom Column Renderers (Proportional weights to fit 1-page layout without horizontal scroll)
+        holdingsTable.getColumnModel().getColumn(0).setPreferredWidth(130);
         holdingsTable.getColumnModel().getColumn(0).setCellRenderer(new AssetCellRenderer());
 
         DefaultTableCellRenderer rightRenderer = new DefaultTableCellRenderer();
         rightRenderer.setHorizontalAlignment(SwingConstants.RIGHT);
 
+        holdingsTable.getColumnModel().getColumn(1).setPreferredWidth(60);
+        holdingsTable.getColumnModel().getColumn(2).setPreferredWidth(70);
+        holdingsTable.getColumnModel().getColumn(3).setPreferredWidth(70);
+        holdingsTable.getColumnModel().getColumn(4).setPreferredWidth(75);
+        holdingsTable.getColumnModel().getColumn(5).setPreferredWidth(75);
         for (int i = 1; i <= 5; i++) {
             holdingsTable.getColumnModel().getColumn(i).setCellRenderer(new MoneyCellRenderer(i));
         }
-        holdingsTable.getColumnModel().getColumn(6).setPreferredWidth(140);
+        holdingsTable.getColumnModel().getColumn(6).setPreferredWidth(110);
         holdingsTable.getColumnModel().getColumn(6).setCellRenderer(new PnlCellRenderer());
 
-        holdingsTable.getColumnModel().getColumn(7).setPreferredWidth(80);
+        holdingsTable.getColumnModel().getColumn(7).setPreferredWidth(65);
         holdingsTable.getColumnModel().getColumn(7).setCellRenderer(new SparklineCellRenderer());
 
-        holdingsTable.getColumnModel().getColumn(8).setPreferredWidth(150);
+        holdingsTable.getColumnModel().getColumn(8).setPreferredWidth(110);
         holdingsTable.getColumnModel().getColumn(8).setCellRenderer(new ActionsCellRenderer());
         holdingsTable.getColumnModel().getColumn(8).setCellEditor(new ActionsCellEditor());
 
@@ -517,6 +551,7 @@ public class PortfolioPanel extends BasePanel {
         tableScroll.setBorder(BorderFactory.createEmptyBorder());
         tableScroll.getViewport().setBackground(Theme.CARD_BG);
         tableScroll.setPreferredSize(new Dimension(800, 240));
+        tableScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
 
         JPanel tableArea = new JPanel(new BorderLayout());
         tableArea.setOpaque(false);

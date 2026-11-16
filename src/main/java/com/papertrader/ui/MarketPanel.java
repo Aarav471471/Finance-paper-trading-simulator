@@ -218,6 +218,7 @@ public class MarketPanel extends BasePanel {
         scrollPane.setOpaque(false);
         scrollPane.getViewport().setOpaque(false);
         scrollPane.getVerticalScrollBar().setUnitIncrement(18);
+        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
 
         centerContainer.add(scrollPane, BorderLayout.CENTER);
 
@@ -1050,40 +1051,41 @@ public class MarketPanel extends BasePanel {
         assetsTable.setGridColor(Theme.BORDER_SUBTLE);
         assetsTable.setShowHorizontalLines(true);
         assetsTable.setShowVerticalLines(false);
+        assetsTable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
         assetsTable.getTableHeader().setBackground(Theme.APP_BG);
         assetsTable.getTableHeader().setForeground(Theme.TXT_MUTED);
         assetsTable.getTableHeader().setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 8.5f));
         assetsTable.getTableHeader().setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER_CUSTOM));
 
-        // Column Renderers
-        assetsTable.getColumnModel().getColumn(0).setPreferredWidth(180);
+        // Column Renderers (Proportional widths fitting 100% width with no horizontal scroll)
+        assetsTable.getColumnModel().getColumn(0).setPreferredWidth(140);
         assetsTable.getColumnModel().getColumn(0).setCellRenderer(new InstrumentCellRenderer());
 
-        assetsTable.getColumnModel().getColumn(1).setPreferredWidth(55);
+        assetsTable.getColumnModel().getColumn(1).setPreferredWidth(45);
         assetsTable.getColumnModel().getColumn(1).setCellRenderer(new CenterBadgeRenderer());
 
-        assetsTable.getColumnModel().getColumn(2).setPreferredWidth(90);
+        assetsTable.getColumnModel().getColumn(2).setPreferredWidth(75);
         assetsTable.getColumnModel().getColumn(2).setCellRenderer(new MonospaceCellRenderer(SwingConstants.RIGHT, Font.BOLD));
 
-        assetsTable.getColumnModel().getColumn(3).setPreferredWidth(80);
+        assetsTable.getColumnModel().getColumn(3).setPreferredWidth(65);
         assetsTable.getColumnModel().getColumn(3).setCellRenderer(new DeltaPointsCellRenderer());
 
-        assetsTable.getColumnModel().getColumn(4).setPreferredWidth(80);
+        assetsTable.getColumnModel().getColumn(4).setPreferredWidth(65);
         assetsTable.getColumnModel().getColumn(4).setCellRenderer(new DeltaPercentCellRenderer());
 
-        assetsTable.getColumnModel().getColumn(5).setPreferredWidth(120);
+        assetsTable.getColumnModel().getColumn(5).setPreferredWidth(95);
         assetsTable.getColumnModel().getColumn(5).setCellRenderer(new RangeGaugeCellRenderer());
 
-        assetsTable.getColumnModel().getColumn(6).setPreferredWidth(75);
+        assetsTable.getColumnModel().getColumn(6).setPreferredWidth(65);
         assetsTable.getColumnModel().getColumn(6).setCellRenderer(new MonospaceCellRenderer(SwingConstants.RIGHT, Font.PLAIN));
 
-        assetsTable.getColumnModel().getColumn(7).setPreferredWidth(90);
+        assetsTable.getColumnModel().getColumn(7).setPreferredWidth(65);
         assetsTable.getColumnModel().getColumn(7).setCellRenderer(new MonospaceCellRenderer(SwingConstants.RIGHT, Font.PLAIN));
 
-        assetsTable.getColumnModel().getColumn(8).setPreferredWidth(75);
+        assetsTable.getColumnModel().getColumn(8).setPreferredWidth(65);
         assetsTable.getColumnModel().getColumn(8).setCellRenderer(new SparklineCellRenderer());
 
-        assetsTable.getColumnModel().getColumn(9).setPreferredWidth(95);
+        assetsTable.getColumnModel().getColumn(9).setPreferredWidth(70);
         assetsTable.getColumnModel().getColumn(9).setCellRenderer(new ActionsCellRenderer());
 
         assetsTable.addMouseListener(new MouseAdapter() {
@@ -1114,6 +1116,29 @@ public class MarketPanel extends BasePanel {
         tableScroll.setOpaque(false);
         tableScroll.getViewport().setOpaque(false);
         tableScroll.setPreferredSize(new Dimension(800, 280));
+        tableScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+
+        // Forward mouse wheel to main scroll pane when at edges to prevent scroll trap
+        tableScroll.addMouseWheelListener(e -> {
+            javax.swing.JScrollBar vBar = tableScroll.getVerticalScrollBar();
+            boolean atEdge = false;
+            if (vBar == null || !vBar.isVisible()) {
+                atEdge = true;
+            } else {
+                int val = vBar.getValue();
+                int max = vBar.getMaximum() - vBar.getVisibleAmount();
+                if ((e.getWheelRotation() < 0 && val <= 0) || (e.getWheelRotation() > 0 && val >= max)) {
+                    atEdge = true;
+                }
+            }
+            if (atEdge) {
+                JScrollPane parentScroll = (JScrollPane) javax.swing.SwingUtilities.getAncestorOfClass(JScrollPane.class, tableScroll.getParent());
+                if (parentScroll != null) {
+                    parentScroll.dispatchEvent(javax.swing.SwingUtilities.convertMouseEvent(tableScroll, e, parentScroll));
+                }
+            }
+        });
+
         card.add(tableScroll, BorderLayout.CENTER);
 
         // Pagination Bar

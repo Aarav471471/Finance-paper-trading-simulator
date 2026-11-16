@@ -55,8 +55,8 @@ public class StatCard extends JPanel {
         this.isFeatured = (iconType == IconType.NET_WORTH);
         setLayout(new BorderLayout());
         setOpaque(false);
-        setPreferredSize(new Dimension(210, 84));
-        setMinimumSize(new Dimension(170, 78));
+        setPreferredSize(new Dimension(200, 72));
+        setMinimumSize(new Dimension(150, 68));
 
         addMouseListener(new MouseAdapter() {
             @Override
