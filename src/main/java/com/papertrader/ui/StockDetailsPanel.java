@@ -101,6 +101,10 @@ public class StockDetailsPanel extends BasePanel {
 
     // Section 1: Chart
     private final CandlestickChartPanel chartPanel = new CandlestickChartPanel();
+    private final CardLayout workspaceCardLayout = new CardLayout();
+    private final JPanel workspaceContainer = new JPanel(workspaceCardLayout);
+    private final JPanel maximizedChartContainer = new JPanel(new BorderLayout());
+    private final JPanel leftWorkspaceCol = new JPanel();
 
     // Section 2: Range & Fundamental Cards
     private final JLabel dayLowLbl = new JLabel("2,890.00");
@@ -195,7 +199,28 @@ public class StockDetailsPanel extends BasePanel {
 
         // 2. Main Two-Column Trading Workspace
         JPanel workspace = buildWorkspace();
-        add(workspace, BorderLayout.CENTER);
+        workspaceContainer.setOpaque(false);
+        maximizedChartContainer.setOpaque(false);
+        maximizedChartContainer.setBorder(BorderFactory.createEmptyBorder(8, 12, 12, 12));
+
+        workspaceContainer.add(workspace, "NORMAL");
+        workspaceContainer.add(maximizedChartContainer, "MAXIMIZED");
+        add(workspaceContainer, BorderLayout.CENTER);
+
+        chartPanel.setOnToggleMaximize(max -> {
+            if (max) {
+                leftWorkspaceCol.remove(chartPanel);
+                maximizedChartContainer.removeAll();
+                maximizedChartContainer.add(chartPanel, BorderLayout.CENTER);
+                workspaceCardLayout.show(workspaceContainer, "MAXIMIZED");
+            } else {
+                maximizedChartContainer.removeAll();
+                leftWorkspaceCol.add(chartPanel, 0);
+                workspaceCardLayout.show(workspaceContainer, "NORMAL");
+            }
+            workspaceContainer.revalidate();
+            workspaceContainer.repaint();
+        });
 
         // Set Default Asset (RELIANCE or first catalog asset)
         Optional<Asset> defaultAsset = marketService.findBySymbol("RELIANCE");
@@ -401,40 +426,41 @@ public class StockDetailsPanel extends BasePanel {
         wrap.setOpaque(false);
 
         // Scrollable Left Workspace (8.5 Cols)
-        JPanel leftCol = new JPanel();
-        leftCol.setLayout(new BoxLayout(leftCol, BoxLayout.Y_AXIS));
-        leftCol.setOpaque(false);
-        leftCol.setBorder(BorderFactory.createEmptyBorder(12, 14, 16, 10));
+        leftWorkspaceCol.removeAll();
+        leftWorkspaceCol.setLayout(new BoxLayout(leftWorkspaceCol, BoxLayout.Y_AXIS));
+        leftWorkspaceCol.setOpaque(false);
+        leftWorkspaceCol.setBorder(BorderFactory.createEmptyBorder(12, 14, 16, 10));
 
         // Section 1: Chart
         chartPanel.setPreferredSize(new Dimension(800, 390));
-        leftCol.add(chartPanel);
-        leftCol.add(Box.createVerticalStrut(14));
+        leftWorkspaceCol.add(chartPanel);
+        leftWorkspaceCol.add(Box.createVerticalStrut(14));
 
         // Section 2: Core Statistics & Dual Range Visualizers
-        leftCol.add(buildSection2Statistics());
-        leftCol.add(Box.createVerticalStrut(14));
+        leftWorkspaceCol.add(buildSection2Statistics());
+        leftWorkspaceCol.add(Box.createVerticalStrut(14));
 
         // Section 3: Screener-Grade Financial Statements & Corporate Overview
-        leftCol.add(buildSection3Financials());
-        leftCol.add(Box.createVerticalStrut(14));
+        leftWorkspaceCol.add(buildSection3Financials());
+        leftWorkspaceCol.add(Box.createVerticalStrut(14));
 
         // Section 4: Speedometer Gauge & Technical Oscillator Checklist
-        leftCol.add(buildSection4TechnicalGauge());
-        leftCol.add(Box.createVerticalStrut(14));
+        leftWorkspaceCol.add(buildSection4TechnicalGauge());
+        leftWorkspaceCol.add(Box.createVerticalStrut(14));
 
         // Section 5: Industry Peers Comparison Table
-        leftCol.add(buildSection5Peers());
-        leftCol.add(Box.createVerticalStrut(14));
+        leftWorkspaceCol.add(buildSection5Peers());
+        leftWorkspaceCol.add(Box.createVerticalStrut(14));
 
         // Section 6: Real-time News & Filings Feed
-        leftCol.add(buildSection6News());
+        leftWorkspaceCol.add(buildSection6News());
 
-        JScrollPane leftScroll = new JScrollPane(leftCol);
+        JScrollPane leftScroll = new JScrollPane(leftWorkspaceCol);
         leftScroll.setOpaque(false);
         leftScroll.getViewport().setOpaque(false);
         leftScroll.setBorder(null);
         leftScroll.getVerticalScrollBar().setUnitIncrement(16);
+        leftScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
 
         // Right Column (3.5 Cols)
         JPanel rightCol = new JPanel(new BorderLayout());
@@ -786,6 +812,7 @@ public class StockDetailsPanel extends BasePanel {
         table.setForeground(Theme.TXT_PRIMARY);
         table.setFont(Theme.MONO_TINY);
         table.setRowHeight(20);
+        table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
         table.getTableHeader().setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 8.5f));
         table.getTableHeader().setBackground(new Color(0x0C, 0x12, 0x1E));
         table.getTableHeader().setForeground(Theme.TXT_MUTED);
@@ -799,6 +826,7 @@ public class StockDetailsPanel extends BasePanel {
         scroll.getViewport().setOpaque(false);
         scroll.setBorder(null);
         scroll.setPreferredSize(new Dimension(500, 180));
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         p.add(scroll, BorderLayout.CENTER);
 
         return p;
@@ -1010,6 +1038,7 @@ public class StockDetailsPanel extends BasePanel {
         peersTable.setForeground(Theme.TXT_PRIMARY);
         peersTable.setFont(Theme.MONO_TINY);
         peersTable.setRowHeight(22);
+        peersTable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
         peersTable.getTableHeader().setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 8.5f));
         peersTable.getTableHeader().setBackground(new Color(0x0C, 0x12, 0x1E));
         peersTable.getTableHeader().setForeground(Theme.TXT_MUTED);
@@ -1033,6 +1062,7 @@ public class StockDetailsPanel extends BasePanel {
         scroll.getViewport().setOpaque(false);
         scroll.setBorder(null);
         scroll.setPreferredSize(new Dimension(500, 130));
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         sec.add(scroll, BorderLayout.CENTER);
 
         return sec;

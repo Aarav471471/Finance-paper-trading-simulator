@@ -74,6 +74,10 @@ public class DashboardPanel extends BasePanel {
     private final WatchlistPanel watchlistPanel;
     private final Portfolio3DView portfolio3D = new Portfolio3DView();
     private final PortfolioPerformanceChart performanceChart = new PortfolioPerformanceChart();
+    private final java.awt.CardLayout workspaceCardLayout = new java.awt.CardLayout();
+    private final JPanel workspaceContainer = new JPanel(workspaceCardLayout);
+    private final JPanel centerCol = new JPanel(new GridLayout(2, 1, 0, 6));
+    private final JPanel maximizedContainer = new JPanel(new BorderLayout());
     private AnalyticsService analytics;
     private final OrderTerminalPanel orderTerminal;
     private final ExecutionLedgerPanel ledgerPanel;
@@ -146,7 +150,28 @@ public class DashboardPanel extends BasePanel {
 
         // Assemble 3-Column Workspace (Left 22%, Center 53%, Right 25%)
         JPanel workspace = buildThreeColumnWorkspace();
-        add(workspace, BorderLayout.CENTER);
+        workspaceContainer.setOpaque(false);
+        maximizedContainer.setOpaque(false);
+        maximizedContainer.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
+
+        workspaceContainer.add(workspace, "NORMAL");
+        workspaceContainer.add(maximizedContainer, "MAXIMIZED");
+        add(workspaceContainer, BorderLayout.CENTER);
+
+        performanceChart.setOnToggleMaximize(max -> {
+            if (max) {
+                centerCol.remove(performanceChart);
+                maximizedContainer.removeAll();
+                maximizedContainer.add(performanceChart, BorderLayout.CENTER);
+                workspaceCardLayout.show(workspaceContainer, "MAXIMIZED");
+            } else {
+                maximizedContainer.removeAll();
+                centerCol.add(performanceChart);
+                workspaceCardLayout.show(workspaceContainer, "NORMAL");
+            }
+            workspaceContainer.revalidate();
+            workspaceContainer.repaint();
+        });
 
         // Bottom Footer
         add(terminalFooter, BorderLayout.SOUTH);
@@ -169,8 +194,8 @@ public class DashboardPanel extends BasePanel {
         workspace.add(watchlistPanel, gbc);
 
         // 2. CENTER COLUMN: 3D Matrix + Performance Chart (53%)
-        JPanel centerCol = new JPanel(new GridLayout(2, 1, 0, 6));
         centerCol.setOpaque(false);
+        centerCol.removeAll();
 
         JPanel matrixCard = buildMatrixContainer();
         centerCol.add(matrixCard);
@@ -182,10 +207,22 @@ public class DashboardPanel extends BasePanel {
         workspace.add(centerCol, gbc);
 
         // 3. RIGHT COLUMN: Order Execution + Execution Ledger (25%)
-        JPanel rightCol = new JPanel(new GridLayout(2, 1, 0, 6));
+        JPanel rightCol = new JPanel(new GridBagLayout());
         rightCol.setOpaque(false);
-        rightCol.add(orderTerminal);
-        rightCol.add(ledgerPanel);
+        GridBagConstraints gbcR = new GridBagConstraints();
+        gbcR.fill = GridBagConstraints.BOTH;
+        gbcR.gridx = 0;
+        gbcR.weightx = 1.0;
+
+        gbcR.gridy = 0;
+        gbcR.weighty = 0.58;
+        gbcR.insets = new Insets(0, 0, 3, 0);
+        rightCol.add(orderTerminal, gbcR);
+
+        gbcR.gridy = 1;
+        gbcR.weighty = 0.42;
+        gbcR.insets = new Insets(3, 0, 0, 0);
+        rightCol.add(ledgerPanel, gbcR);
 
         gbc.gridx = 2;
         gbc.weightx = 0.25;

@@ -48,8 +48,8 @@ public class ExecutionLedgerPanel extends JPanel {
         setOpaque(false);
         setBackground(Theme.CARD_BG);
         setBorder(Theme.terminalCardBorder());
-        setPreferredSize(new Dimension(260, 180));
-        setMinimumSize(new Dimension(220, 150));
+        setPreferredSize(new Dimension(260, 160));
+        setMinimumSize(new Dimension(210, 120));
 
         // 1. Header (Title, CSV Audit Download, View All)
         JPanel header = new JPanel(new BorderLayout());
@@ -97,6 +97,7 @@ public class ExecutionLedgerPanel extends JPanel {
         scroll.getViewport().setOpaque(false);
         scroll.setBorder(null);
         scroll.getVerticalScrollBar().setUnitIncrement(14);
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         add(scroll, BorderLayout.CENTER);
     }
 

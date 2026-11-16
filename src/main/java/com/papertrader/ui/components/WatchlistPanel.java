@@ -160,6 +160,7 @@ public class WatchlistPanel extends JPanel {
         scroll.getViewport().setOpaque(false);
         scroll.setBorder(null);
         scroll.getVerticalScrollBar().setUnitIncrement(14);
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         add(scroll, BorderLayout.CENTER);
 
         // 4. Mini Allocation Summary at bottom

@@ -115,9 +115,14 @@ public class PortfolioPerformanceChart extends JPanel {
     private double panOffset = 0.0;
     private final JLabel lblZoomBadge = new JLabel("100%");
 
+    // Maximize / Minimize toggle
+    private boolean isMaximized = false;
+    private java.util.function.Consumer<Boolean> onToggleMaximize;
+    private JButton btnMaximize;
+
     private static final int PAD_LEFT = 14;
     private static final int PAD_RIGHT = 14;
-    private static final int PAD_TOP = 42;
+    private static final int PAD_TOP = 64;
     private static final int PAD_BOTTOM = 24;
 
     public PortfolioPerformanceChart() {
@@ -208,26 +213,23 @@ public class PortfolioPerformanceChart extends JPanel {
     }
 
     private JPanel buildHeader() {
-        JPanel bar = new JPanel(new BorderLayout());
-        bar.setOpaque(false);
+        JPanel bar = new JPanel();
+        bar.setLayout(new javax.swing.BoxLayout(bar, javax.swing.BoxLayout.Y_AXIS));
+        bar.setOpaque(true);
+        bar.setBackground(new Color(0x13, 0x1A, 0x27));
         bar.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER_CUSTOM));
-        bar.setPreferredSize(new Dimension(100, 36));
 
-        // Left Header metrics
-        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
-        left.setOpaque(false);
+        // ROW 1: Titles & Hero Metric (Left) + Mode Selector & Maximize Button (Right)
+        JPanel row1 = new JPanel(new BorderLayout(6, 0));
+        row1.setOpaque(false);
+        row1.setPreferredSize(new Dimension(100, 24));
 
-        JPanel titles = new JPanel();
-        titles.setLayout(new javax.swing.BoxLayout(titles, javax.swing.BoxLayout.Y_AXIS));
+        JPanel titles = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
         titles.setOpaque(false);
 
         JLabel title = new JLabel("PORTFOLIO PERFORMANCE");
         title.setFont(Theme.MICRO.deriveFont(Font.BOLD, 9f));
         title.setForeground(Theme.TXT_MUTED);
-        titles.add(title);
-
-        JPanel readouts = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-        readouts.setOpaque(false);
 
         heroVal.setFont(Theme.MONO_BODY.deriveFont(Font.BOLD, 12f));
         heroVal.setForeground(Color.WHITE);
@@ -235,16 +237,13 @@ public class PortfolioPerformanceChart extends JPanel {
         retPill.setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 9f));
         retPill.setForeground(Theme.GAIN);
 
-        readouts.add(heroVal);
-        readouts.add(retPill);
-        titles.add(readouts);
-        left.add(titles);
+        titles.add(title);
+        titles.add(heroVal);
+        titles.add(retPill);
+        row1.add(titles, BorderLayout.WEST);
 
-        bar.add(left, BorderLayout.WEST);
-
-        // Right: Benchmark Toggle & Timeframe Pills & Mode Toggle
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 4));
-        right.setOpaque(false);
+        JPanel row1Right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 1));
+        row1Right.setOpaque(false);
 
         // Chart Mode Selector: [Line] [Candles] with custom vector icons
         JPanel modeGroup = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
@@ -257,7 +256,21 @@ public class PortfolioPerformanceChart extends JPanel {
             modeButtons.put(m, btn);
             modeGroup.add(btn);
         }
-        right.add(modeGroup);
+        row1Right.add(modeGroup);
+
+        btnMaximize = createZoomBtn("⛶", "Maximize Chart", e -> toggleMaximize());
+        row1Right.add(btnMaximize);
+
+        row1.add(row1Right, BorderLayout.EAST);
+        bar.add(row1);
+
+        // ROW 2: Benchmark Checkbox (Left) + Timeframe Pills & Zoom Controls (Right)
+        JPanel row2 = new JPanel(new BorderLayout(6, 0));
+        row2.setOpaque(false);
+        row2.setPreferredSize(new Dimension(100, 24));
+
+        JPanel row2Left = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 1));
+        row2Left.setOpaque(false);
 
         JCheckBox benchToggle = new JCheckBox("vs S&P 500 (SPY)", showBenchmark);
         benchToggle.setFont(Theme.MONO_TINY);
@@ -269,7 +282,11 @@ public class PortfolioPerformanceChart extends JPanel {
             showBenchmark = benchToggle.isSelected();
             repaint();
         });
-        right.add(benchToggle);
+        row2Left.add(benchToggle);
+        row2.add(row2Left, BorderLayout.WEST);
+
+        JPanel row2Right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 1));
+        row2Right.setOpaque(false);
 
         JPanel pills = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
         pills.setOpaque(false);
@@ -281,7 +298,7 @@ public class PortfolioPerformanceChart extends JPanel {
             btn.setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 9f));
             btn.setFocusPainted(false);
             btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            btn.setPreferredSize(new Dimension(32, 20));
+            btn.setPreferredSize(new Dimension(32, 19));
 
             stylePill(btn, tf == currentTimeframe);
 
@@ -298,7 +315,7 @@ public class PortfolioPerformanceChart extends JPanel {
             filterButtons.put(tf, btn);
             pills.add(btn);
         }
-        right.add(pills);
+        row2Right.add(pills);
 
         // Map-style Zoom Controls: Zoom In, Zoom Out, Zoom %, Reset
         JPanel zoomGroup = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
@@ -318,10 +335,34 @@ public class PortfolioPerformanceChart extends JPanel {
         zoomGroup.add(btnZoomIn);
         zoomGroup.add(btnReset);
 
-        right.add(zoomGroup);
-        bar.add(right, BorderLayout.EAST);
+        row2Right.add(zoomGroup);
+        row2.add(row2Right, BorderLayout.EAST);
+        bar.add(row2);
 
         return bar;
+    }
+
+    public void setOnToggleMaximize(java.util.function.Consumer<Boolean> listener) {
+        this.onToggleMaximize = listener;
+    }
+
+    public void toggleMaximize() {
+        setMaximized(!isMaximized);
+    }
+
+    public void setMaximized(boolean max) {
+        this.isMaximized = max;
+        if (btnMaximize != null) {
+            btnMaximize.setText(max ? "🗗" : "⛶");
+            btnMaximize.setToolTipText(max ? "Restore Chart" : "Maximize Chart");
+        }
+        if (onToggleMaximize != null) {
+            onToggleMaximize.accept(max);
+        }
+    }
+
+    public boolean isMaximized() {
+        return isMaximized;
     }
 
     public void zoomIn() {
@@ -641,7 +682,7 @@ public class PortfolioPerformanceChart extends JPanel {
         int h = getHeight();
 
         // Canvas Surface (#070B14)
-        int canvasY = 38;
+        int canvasY = 48;
         int canvasH = h - canvasY - 1;
         g2.setColor(new Color(0x07, 0x0B, 0x14));
         g2.fillRoundRect(PAD_LEFT - 4, canvasY, w - PAD_LEFT - PAD_RIGHT + 8, canvasH, 6, 6);
@@ -759,7 +800,7 @@ public class PortfolioPerformanceChart extends JPanel {
 
         // Legend Overlay
         int legX = PAD_LEFT + 6;
-        int legY = PAD_TOP + 2;
+        int legY = PAD_TOP + 4;
         g2.setFont(Theme.MONO_TINY);
 
         g2.setColor(Theme.GAIN);
@@ -780,7 +821,7 @@ public class PortfolioPerformanceChart extends JPanel {
         int tagW = tfm.stringWidth(liveTag) + 10;
         int tagH = 16;
         int tagX = PAD_LEFT + chartW - tagW - 4;
-        int tagY = PAD_TOP - 2;
+        int tagY = PAD_TOP + 2;
 
         g2.setColor(Theme.GAIN);
         g2.fillRoundRect(tagX, tagY, tagW, tagH, 3, 3);
@@ -931,7 +972,7 @@ public class PortfolioPerformanceChart extends JPanel {
 
         // Legend Overlay (Top Left of Canvas)
         int legX = PAD_LEFT + 6;
-        int legY = PAD_TOP + 2;
+        int legY = PAD_TOP + 4;
         g2.setFont(Theme.MONO_TINY);
 
         g2.setColor(Theme.GAIN);
@@ -952,7 +993,7 @@ public class PortfolioPerformanceChart extends JPanel {
         int tagW = tfm.stringWidth(liveTag) + 10;
         int tagH = 16;
         int tagX = PAD_LEFT + chartW - tagW - 4;
-        int tagY = PAD_TOP - 2;
+        int tagY = PAD_TOP + 2;
 
         g2.setColor(Theme.GAIN);
         g2.fillRoundRect(tagX, tagY, tagW, tagH, 3, 3);

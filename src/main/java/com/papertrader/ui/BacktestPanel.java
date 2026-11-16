@@ -89,11 +89,55 @@ public class BacktestPanel extends BasePanel {
         center.add(cards, BorderLayout.NORTH);
         center.add(charts, BorderLayout.CENTER);
 
-        JPanel content = new JPanel(new BorderLayout(14, 0));
-        content.setOpaque(false);
-        content.add(buildControls(), BorderLayout.WEST);
-        content.add(center, BorderLayout.CENTER);
-        add(content, BorderLayout.CENTER);
+        JPanel normalContent = new JPanel(new BorderLayout(14, 0));
+        normalContent.setOpaque(false);
+        normalContent.add(buildControls(), BorderLayout.WEST);
+        normalContent.add(center, BorderLayout.CENTER);
+
+        java.awt.CardLayout cardLayout = new java.awt.CardLayout();
+        JPanel container = new JPanel(cardLayout);
+        container.setOpaque(false);
+
+        JPanel maxChartPanel = new JPanel(new BorderLayout());
+        maxChartPanel.setOpaque(false);
+
+        container.add(normalContent, "NORMAL");
+        container.add(maxChartPanel, "MAXIMIZED");
+        add(container, BorderLayout.CENTER);
+
+        chart.setOnToggleMaximize(max -> {
+            if (max) {
+                equityChart.setMaximized(false);
+                charts.remove(chart);
+                maxChartPanel.removeAll();
+                maxChartPanel.add(chart, BorderLayout.CENTER);
+                cardLayout.show(container, "MAXIMIZED");
+            } else {
+                maxChartPanel.removeAll();
+                charts.setTopComponent(chart);
+                charts.setResizeWeight(0.65);
+                cardLayout.show(container, "NORMAL");
+            }
+            container.revalidate();
+            container.repaint();
+        });
+
+        equityChart.setOnToggleMaximize(max -> {
+            if (max) {
+                chart.setMaximized(false);
+                charts.remove(equityChart);
+                maxChartPanel.removeAll();
+                maxChartPanel.add(equityChart, BorderLayout.CENTER);
+                cardLayout.show(container, "MAXIMIZED");
+            } else {
+                maxChartPanel.removeAll();
+                charts.setBottomComponent(equityChart);
+                charts.setResizeWeight(0.65);
+                cardLayout.show(container, "NORMAL");
+            }
+            container.revalidate();
+            container.repaint();
+        });
 
         assetBox.addActionListener(e -> strategyPicker.setReferencePrice(((Asset) assetBox.getSelectedItem()).getPrice()));
         strategyPicker.setReferencePrice(((Asset) assetBox.getSelectedItem()).getPrice());

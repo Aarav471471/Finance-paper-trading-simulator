@@ -210,7 +210,15 @@ public class MainFrame extends JFrame {
         sidebar.add(bottomSection);
 
         JPanel shell = new JPanel(new BorderLayout());
-        shell.add(sidebar, BorderLayout.WEST);
+        javax.swing.JScrollPane sidebarScroll = new javax.swing.JScrollPane(sidebar);
+        sidebarScroll.setBorder(null);
+        sidebarScroll.setOpaque(false);
+        sidebarScroll.getViewport().setOpaque(false);
+        sidebarScroll.setHorizontalScrollBarPolicy(javax.swing.JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        sidebarScroll.getVerticalScrollBar().setPreferredSize(new Dimension(0, 0));
+        sidebarScroll.getVerticalScrollBar().setUnitIncrement(14);
+        sidebarScroll.setPreferredSize(new Dimension(220, 100));
+        shell.add(sidebarScroll, BorderLayout.WEST);
         shell.add(pageArea, BorderLayout.CENTER);
         return shell;
     }
