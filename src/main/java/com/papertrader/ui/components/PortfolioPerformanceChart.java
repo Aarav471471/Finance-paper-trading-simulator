@@ -32,6 +32,8 @@ import java.awt.Polygon;
 import java.awt.RenderingHints;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.event.MouseWheelEvent;
+import javax.swing.SwingUtilities;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -108,6 +110,11 @@ public class PortfolioPerformanceChart extends JPanel {
     private Point mousePoint = null;
     private int hoveredIndex = -1;
 
+    // Map-style Zoom & Pan
+    private double zoomLevel = 1.0;
+    private double panOffset = 0.0;
+    private final JLabel lblZoomBadge = new JLabel("100%");
+
     private static final int PAD_LEFT = 14;
     private static final int PAD_RIGHT = 14;
     private static final int PAD_TOP = 42;
@@ -124,7 +131,10 @@ public class PortfolioPerformanceChart extends JPanel {
         JPanel headerBar = buildHeader();
         add(headerBar, BorderLayout.NORTH);
 
-        MouseAdapter hoverHandler = new MouseAdapter() {
+        MouseAdapter mouseHandler = new MouseAdapter() {
+            private Point dragStart = null;
+            private double panStart = 0.0;
+
             @Override
             public void mouseMoved(MouseEvent e) {
                 mousePoint = e.getPoint();
@@ -133,14 +143,68 @@ public class PortfolioPerformanceChart extends JPanel {
             }
 
             @Override
+            public void mousePressed(MouseEvent e) {
+                if (SwingUtilities.isLeftMouseButton(e)) {
+                    dragStart = e.getPoint();
+                    panStart = panOffset;
+                    setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
+                }
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                dragStart = null;
+                setCursor(Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR));
+            }
+
+            @Override
+            public void mouseDragged(MouseEvent e) {
+                if (dragStart != null) {
+                    int totalN = (currentMode == ChartMode.CANDLES) ? candlePoints.size() : dataPoints.size();
+                    if (totalN > 0) {
+                        int chartW = getWidth() - PAD_LEFT - PAD_RIGHT;
+                        int visibleN = Math.max(6, (int) Math.round(totalN / zoomLevel));
+                        if (chartW > 0 && visibleN < totalN) {
+                            double pitch = (double) chartW / visibleN;
+                            int dx = e.getX() - dragStart.x;
+                            double delta = dx / pitch;
+                            panOffset = Math.max(0.0, Math.min(totalN - visibleN, panStart - delta));
+                            mousePoint = e.getPoint();
+                            updateHoveredIndex();
+                            repaint();
+                        }
+                    }
+                }
+            }
+
+            @Override
+            public void mouseWheelMoved(MouseWheelEvent e) {
+                if (e.getWheelRotation() < 0) {
+                    setZoom(zoomLevel * 1.18, e.getX());
+                } else {
+                    setZoom(zoomLevel / 1.18, e.getX());
+                }
+            }
+
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 2) {
+                    resetZoom();
+                }
+            }
+
+            @Override
             public void mouseExited(MouseEvent e) {
-                mousePoint = null;
-                hoveredIndex = -1;
-                repaint();
+                if (dragStart == null) {
+                    mousePoint = null;
+                    hoveredIndex = -1;
+                    repaint();
+                }
             }
         };
-        addMouseListener(hoverHandler);
-        addMouseMotionListener(hoverHandler);
+        addMouseListener(mouseHandler);
+        addMouseMotionListener(mouseHandler);
+        addMouseWheelListener(mouseHandler);
     }
 
     private JPanel buildHeader() {
@@ -226,6 +290,7 @@ public class PortfolioPerformanceChart extends JPanel {
                 for (Map.Entry<Timeframe, JButton> entry : filterButtons.entrySet()) {
                     stylePill(entry.getValue(), entry.getKey() == currentTimeframe);
                 }
+                resetZoom();
                 recalculateCurve();
                 repaint();
             });
@@ -234,9 +299,84 @@ public class PortfolioPerformanceChart extends JPanel {
             pills.add(btn);
         }
         right.add(pills);
+
+        // Map-style Zoom Controls: Zoom In, Zoom Out, Zoom %, Reset
+        JPanel zoomGroup = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
+        zoomGroup.setOpaque(true);
+        zoomGroup.setBackground(new Color(0x10, 0x16, 0x22));
+        zoomGroup.setBorder(new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 4, 1));
+
+        JButton btnZoomOut = createZoomBtn("−", "Zoom Out (or Scroll Down)", e -> zoomOut());
+        lblZoomBadge.setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 8.5f));
+        lblZoomBadge.setForeground(Theme.TXT_MUTED);
+        lblZoomBadge.setBorder(BorderFactory.createEmptyBorder(0, 4, 0, 4));
+        JButton btnZoomIn = createZoomBtn("+", "Zoom In (or Scroll Up)", e -> zoomIn());
+        JButton btnReset = createZoomBtn("⟲", "Reset Zoom / Pan (or Double Click)", e -> resetZoom());
+
+        zoomGroup.add(btnZoomOut);
+        zoomGroup.add(lblZoomBadge);
+        zoomGroup.add(btnZoomIn);
+        zoomGroup.add(btnReset);
+
+        right.add(zoomGroup);
         bar.add(right, BorderLayout.EAST);
 
         return bar;
+    }
+
+    public void zoomIn() {
+        setZoom(zoomLevel * 1.25, -1);
+    }
+
+    public void zoomOut() {
+        setZoom(zoomLevel / 1.25, -1);
+    }
+
+    public void resetZoom() {
+        zoomLevel = 1.0;
+        panOffset = 0.0;
+        updateZoomBadge();
+        repaint();
+    }
+
+    public void setZoom(double newZoom, int mouseX) {
+        int totalN = (currentMode == ChartMode.CANDLES) ? candlePoints.size() : dataPoints.size();
+        double oldZoom = zoomLevel;
+        zoomLevel = Math.max(1.0, Math.min(10.0, newZoom));
+        if (zoomLevel <= 1.001) {
+            zoomLevel = 1.0;
+            panOffset = 0.0;
+        } else if (totalN > 0) {
+            int oldVis = Math.max(6, (int) Math.round(totalN / oldZoom));
+            int newVis = Math.max(6, (int) Math.round(totalN / zoomLevel));
+            double frac = 0.5;
+            int chartW = getWidth() - PAD_LEFT - PAD_RIGHT;
+            if (mouseX >= PAD_LEFT && chartW > 0) {
+                frac = Math.max(0.0, Math.min(1.0, (double) (mouseX - PAD_LEFT) / chartW));
+            }
+            double oldCenter = panOffset + frac * oldVis;
+            panOffset = Math.max(0.0, Math.min(totalN - newVis, oldCenter - frac * newVis));
+        }
+        updateZoomBadge();
+        repaint();
+    }
+
+    private void updateZoomBadge() {
+        lblZoomBadge.setText(String.format(java.util.Locale.US, "%d%%", (int) Math.round(zoomLevel * 100)));
+        lblZoomBadge.setForeground(zoomLevel > 1.01 ? Theme.GAIN : Theme.TXT_MUTED);
+    }
+
+    private JButton createZoomBtn(String text, String tooltip, java.awt.event.ActionListener al) {
+        JButton b = new JButton(text);
+        b.setFont(new Font("SansSerif", Font.BOLD, 11));
+        b.setForeground(Theme.TXT_SECONDARY);
+        b.setBackground(Theme.SURFACE_SUB);
+        b.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 6));
+        b.setFocusPainted(false);
+        b.setToolTipText(tooltip);
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        b.addActionListener(al);
+        return b;
     }
 
     private JButton createVectorModeBtn(ChartMode mode) {
@@ -312,6 +452,7 @@ public class PortfolioPerformanceChart extends JPanel {
             for (Map.Entry<ChartMode, JButton> entry : modeButtons.entrySet()) {
                 entry.getValue().repaint();
             }
+            resetZoom();
             repaint();
         });
 
@@ -483,8 +624,10 @@ public class PortfolioPerformanceChart extends JPanel {
             return;
         }
 
-        int closest = (int) Math.round(((double) mx / w) * (pointCount - 1));
-        hoveredIndex = Math.max(0, Math.min(pointCount - 1, closest));
+        int visibleN = Math.max(6, (int) Math.round(pointCount / zoomLevel));
+        int startIndex = Math.max(0, Math.min(pointCount - visibleN, (int) Math.round(panOffset)));
+        int localIdx = (int) Math.round(((double) mx / w) * (visibleN - 1));
+        hoveredIndex = Math.max(0, Math.min(pointCount - 1, startIndex + localIdx));
     }
 
     @Override
@@ -513,16 +656,22 @@ public class PortfolioPerformanceChart extends JPanel {
     }
 
     private void paintCandlesMode(Graphics2D g2, int w, int h) {
-        int n = candlePoints.size();
-        if (n < 2) return;
+        int totalN = candlePoints.size();
+        if (totalN < 2) return;
+
+        int visibleN = Math.max(6, (int) Math.round(totalN / zoomLevel));
+        int startIndex = Math.max(0, Math.min(totalN - visibleN, (int) Math.round(panOffset)));
+        int endIndex = Math.min(totalN, startIndex + visibleN);
+        int n = endIndex - startIndex;
 
         int chartW = w - PAD_LEFT - PAD_RIGHT;
         int chartH = h - PAD_TOP - PAD_BOTTOM;
 
-        // Min / Max computation across candle high / low & benchmark
+        // Min / Max computation across candle high / low & benchmark in visible window
         double min = Double.MAX_VALUE;
         double max = -Double.MAX_VALUE;
-        for (CandlePoint cp : candlePoints) {
+        for (int i = startIndex; i < endIndex; i++) {
+            CandlePoint cp = candlePoints.get(i);
             min = Math.min(min, cp.low());
             max = Math.max(max, cp.high());
             if (showBenchmark) {
@@ -548,22 +697,23 @@ public class PortfolioPerformanceChart extends JPanel {
             int[] bYs = new int[n];
             for (int i = 0; i < n; i++) {
                 bXs[i] = PAD_LEFT + (int) ((double) i / (n - 1) * chartW);
-                bYs[i] = PAD_TOP + (int) ((max - candlePoints.get(i).benchmark()) / (max - min) * chartH);
+                bYs[i] = PAD_TOP + (int) ((max - candlePoints.get(startIndex + i).benchmark()) / (max - min) * chartH);
             }
             g2.setColor(new Color(0x64, 0x74, 0x8B));
             g2.setStroke(new BasicStroke(1.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND, 10f, dash, 0f));
             g2.drawPolyline(bXs, bYs, n);
         }
 
-        // Slender Japanese Candlesticks with prominent wicks (never solid contiguous blocks!)
+        // Japanese Candlesticks
         double pitch = (double) chartW / n;
-        double candleBodyW = Math.max(4.0, Math.min(8.0, pitch * 0.38));
+        double candleBodyW = Math.max(3.0, Math.min(22.0, pitch * 0.55));
 
         int hoveredCx = -1;
         int hoveredBodyTop = -1;
 
         for (int i = 0; i < n; i++) {
-            CandlePoint cp = candlePoints.get(i);
+            int cIdx = startIndex + i;
+            CandlePoint cp = candlePoints.get(cIdx);
             int cx = (int) (PAD_LEFT + i * pitch + pitch / 2.0);
 
             int yHigh = PAD_TOP + (int) ((max - cp.high()) / (max - min) * chartH);
@@ -581,12 +731,12 @@ public class PortfolioPerformanceChart extends JPanel {
             Color bodyBorder = bullish ? new Color(0x22, 0xC5, 0x5E) : new Color(0xEF, 0x44, 0x44);
             Color bodyFill = bullish ? new Color(34, 197, 94, 210) : new Color(239, 68, 68, 220);
 
-            // 1. Slender Upper Wick (from yHigh down to bodyTop)
+            // 1. Upper Wick
             g2.setColor(wickColor);
             g2.setStroke(new BasicStroke(1.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
             g2.drawLine(cx, yHigh, cx, bodyTop);
 
-            // 2. Slender Lower Wick (from bodyBottom down to yLow)
+            // 2. Lower Wick
             g2.drawLine(cx, bodyBottom, cx, yLow);
 
             // 3. Real Candle Body with crisp border
@@ -601,7 +751,7 @@ public class PortfolioPerformanceChart extends JPanel {
                 g2.drawLine(bodyLeft - 1, bodyTop, (int) (bodyLeft + candleBodyW + 1), bodyTop);
             }
 
-            if (i == hoveredIndex) {
+            if (cIdx == hoveredIndex) {
                 hoveredCx = cx;
                 hoveredBodyTop = bodyTop;
             }
@@ -637,20 +787,37 @@ public class PortfolioPerformanceChart extends JPanel {
         g2.setColor(new Color(0x02, 0x06, 0x17));
         g2.drawString(liveTag, tagX + 5, tagY + 11);
 
+        // Minimap overview trackbar (when zoomed in)
+        if (zoomLevel > 1.05 && totalN > 0) {
+            int mmW = 90;
+            int mmH = 5;
+            int mmX = PAD_LEFT + chartW - mmW - 8;
+            int mmY = PAD_TOP + 18;
+            g2.setColor(new Color(0x10, 0x16, 0x22, 180));
+            g2.fillRoundRect(mmX, mmY, mmW, mmH, 3, 3);
+            g2.setColor(new Color(0x28, 0x34, 0x49));
+            g2.drawRoundRect(mmX, mmY, mmW, mmH, 3, 3);
+
+            double startFrac = (double) startIndex / totalN;
+            double visFrac = (double) n / totalN;
+            int thumbX = mmX + (int) (startFrac * mmW);
+            int thumbW = Math.max(6, (int) (visFrac * mmW));
+            g2.setColor(new Color(0x22, 0xC5, 0x5E, 200));
+            g2.fillRoundRect(thumbX, mmY, thumbW, mmH, 3, 3);
+        }
+
         // Date Axis
         int axisY = h - 6;
         g2.setColor(Theme.TXT_MUTED);
         g2.setFont(Theme.MONO_TINY.deriveFont(Font.PLAIN, 8f));
-        if (n >= 5) {
-            g2.drawString(candlePoints.get(0).label(), PAD_LEFT, axisY);
-            g2.drawString(candlePoints.get(n / 4).label(), PAD_LEFT + chartW / 4, axisY);
-            g2.drawString(candlePoints.get(n / 2).label(), PAD_LEFT + chartW / 2, axisY);
-            g2.drawString(candlePoints.get(3 * n / 4).label(), PAD_LEFT + 3 * chartW / 4, axisY);
-            g2.drawString("Today (Live)", PAD_LEFT + chartW - 52, axisY);
+        if (n >= 4) {
+            g2.drawString(candlePoints.get(startIndex).label(), PAD_LEFT, axisY);
+            g2.drawString(candlePoints.get(startIndex + n / 2).label(), PAD_LEFT + chartW / 2, axisY);
+            g2.drawString(candlePoints.get(endIndex - 1).label(), PAD_LEFT + chartW - 52, axisY);
         }
 
         // Hover Crosshair & Rich Candlestick Inspection Tooltip
-        if (hoveredIndex >= 0 && hoveredIndex < n && hoveredCx >= 0) {
+        if (hoveredIndex >= startIndex && hoveredIndex < endIndex && hoveredCx >= 0) {
             CandlePoint cp = candlePoints.get(hoveredIndex);
 
             // Vertical crosshair
@@ -685,12 +852,19 @@ public class PortfolioPerformanceChart extends JPanel {
     }
 
     private void paintLineMode(Graphics2D g2, int w, int h) {
-        if (dataPoints.size() < 2) return;
+        int totalN = dataPoints.size();
+        if (totalN < 2) return;
 
-        // Min / Max computation across curve & benchmark
+        int visibleN = Math.max(6, (int) Math.round(totalN / zoomLevel));
+        int startIndex = Math.max(0, Math.min(totalN - visibleN, (int) Math.round(panOffset)));
+        int endIndex = Math.min(totalN, startIndex + visibleN);
+        int n = endIndex - startIndex;
+
+        // Min / Max computation across curve & benchmark in visible window
         double min = Double.MAX_VALUE;
         double max = -Double.MAX_VALUE;
-        for (ChartPoint pt : dataPoints) {
+        for (int i = startIndex; i < endIndex; i++) {
+            ChartPoint pt = dataPoints.get(i);
             min = Math.min(min, pt.value());
             max = Math.max(max, pt.value());
             if (showBenchmark) {
@@ -704,16 +878,16 @@ public class PortfolioPerformanceChart extends JPanel {
 
         int chartW = w - PAD_LEFT - PAD_RIGHT;
         int chartH = h - PAD_TOP - PAD_BOTTOM;
-        int n = dataPoints.size();
 
         int[] xs = new int[n];
         int[] ys = new int[n];
         int[] bYs = new int[n];
 
         for (int i = 0; i < n; i++) {
+            int dIdx = startIndex + i;
             xs[i] = PAD_LEFT + (int) ((double) i / (n - 1) * chartW);
-            ys[i] = PAD_TOP + (int) ((max - dataPoints.get(i).value()) / (max - min) * chartH);
-            bYs[i] = PAD_TOP + (int) ((max - dataPoints.get(i).benchmark()) / (max - min) * chartH);
+            ys[i] = PAD_TOP + (int) ((max - dataPoints.get(dIdx).value()) / (max - min) * chartH);
+            bYs[i] = PAD_TOP + (int) ((max - dataPoints.get(dIdx).benchmark()) / (max - min) * chartH);
         }
 
         // Horizontal Grid Guide Lines
@@ -785,22 +959,40 @@ public class PortfolioPerformanceChart extends JPanel {
         g2.setColor(new Color(0x02, 0x06, 0x17));
         g2.drawString(liveTag, tagX + 5, tagY + 11);
 
+        // Minimap overview trackbar (when zoomed in)
+        if (zoomLevel > 1.05 && totalN > 0) {
+            int mmW = 90;
+            int mmH = 5;
+            int mmX = PAD_LEFT + chartW - mmW - 8;
+            int mmY = PAD_TOP + 18;
+            g2.setColor(new Color(0x10, 0x16, 0x22, 180));
+            g2.fillRoundRect(mmX, mmY, mmW, mmH, 3, 3);
+            g2.setColor(new Color(0x28, 0x34, 0x49));
+            g2.drawRoundRect(mmX, mmY, mmW, mmH, 3, 3);
+
+            double startFrac = (double) startIndex / totalN;
+            double visFrac = (double) n / totalN;
+            int thumbX = mmX + (int) (startFrac * mmW);
+            int thumbW = Math.max(6, (int) (visFrac * mmW));
+            g2.setColor(new Color(0x22, 0xC5, 0x5E, 200));
+            g2.fillRoundRect(thumbX, mmY, thumbW, mmH, 3, 3);
+        }
+
         // Dynamic Date Axis Labels Below
         int axisY = h - 6;
         g2.setColor(Theme.TXT_MUTED);
         g2.setFont(Theme.MONO_TINY.deriveFont(Font.PLAIN, 8f));
-        if (n >= 5) {
-            g2.drawString(dataPoints.get(0).label(), PAD_LEFT, axisY);
-            g2.drawString(dataPoints.get(n / 4).label(), PAD_LEFT + chartW / 4, axisY);
-            g2.drawString(dataPoints.get(n / 2).label(), PAD_LEFT + chartW / 2, axisY);
-            g2.drawString(dataPoints.get(3 * n / 4).label(), PAD_LEFT + 3 * chartW / 4, axisY);
-            g2.drawString("Today (Live)", PAD_LEFT + chartW - 52, axisY);
+        if (n >= 4) {
+            g2.drawString(dataPoints.get(startIndex).label(), PAD_LEFT, axisY);
+            g2.drawString(dataPoints.get(startIndex + n / 2).label(), PAD_LEFT + chartW / 2, axisY);
+            g2.drawString(dataPoints.get(endIndex - 1).label(), PAD_LEFT + chartW - 52, axisY);
         }
 
         // Hover Crosshair & Callout Tooltip
-        if (hoveredIndex >= 0 && hoveredIndex < n) {
-            int hx = xs[hoveredIndex];
-            int hy = ys[hoveredIndex];
+        if (hoveredIndex >= startIndex && hoveredIndex < endIndex) {
+            int localI = hoveredIndex - startIndex;
+            int hx = xs[localI];
+            int hy = ys[localI];
             ChartPoint pt = dataPoints.get(hoveredIndex);
 
             g2.setColor(new Color(59, 130, 246, 140));

@@ -26,6 +26,8 @@ import java.awt.RenderingHints;
 import java.awt.Stroke;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.event.MouseWheelEvent;
+import javax.swing.SwingUtilities;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -134,6 +136,11 @@ public class CandlestickChartPanel extends JPanel {
     private Point mousePoint = null;
     private int hoveredIndex = -1;
 
+    // Map-style Zoom & Pan
+    private double zoomLevel = 1.0;
+    private double panOffset = 0.0;
+    private final JLabel lblZoomBadge = new JLabel("100%");
+
     // Canvas padding
     private static final int PAD_LEFT = 14;
     private static final int PAD_RIGHT = 75; // for price axis labels
@@ -162,8 +169,11 @@ public class CandlestickChartPanel extends JPanel {
         ChartCanvas canvas = new ChartCanvas();
         add(canvas, BorderLayout.CENTER);
 
-        // Mouse listeners for crosshair
+        // Mouse listeners for crosshair, drag-to-pan, and wheel zoom
         MouseAdapter mouseHandler = new MouseAdapter() {
+            private Point dragStart = null;
+            private double panStart = 0.0;
+
             @Override
             public void mouseMoved(MouseEvent e) {
                 mousePoint = e.getPoint();
@@ -173,15 +183,67 @@ public class CandlestickChartPanel extends JPanel {
             }
 
             @Override
+            public void mousePressed(MouseEvent e) {
+                if (SwingUtilities.isLeftMouseButton(e)) {
+                    dragStart = e.getPoint();
+                    panStart = panOffset;
+                    canvas.setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
+                }
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                dragStart = null;
+                canvas.setCursor(Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR));
+            }
+
+            @Override
+            public void mouseDragged(MouseEvent e) {
+                if (dragStart != null && !candles.isEmpty()) {
+                    int chartW = canvas.getWidth() - PAD_LEFT - PAD_RIGHT;
+                    int visibleN = Math.max(8, (int) Math.round(candles.size() / zoomLevel));
+                    if (chartW > 0 && visibleN < candles.size()) {
+                        double pitch = (double) chartW / visibleN;
+                        int dx = e.getX() - dragStart.x;
+                        double candleDelta = dx / pitch;
+                        panOffset = Math.max(0.0, Math.min(candles.size() - visibleN, panStart - candleDelta));
+                        mousePoint = e.getPoint();
+                        updateHoverIndex(canvas.getWidth());
+                        updateOhlcvDisplay();
+                        canvas.repaint();
+                    }
+                }
+            }
+
+            @Override
+            public void mouseWheelMoved(MouseWheelEvent e) {
+                if (e.getWheelRotation() < 0) {
+                    setZoom(zoomLevel * 1.18, e.getX());
+                } else {
+                    setZoom(zoomLevel / 1.18, e.getX());
+                }
+            }
+
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 2) {
+                    resetZoom();
+                }
+            }
+
+            @Override
             public void mouseExited(MouseEvent e) {
-                mousePoint = null;
-                hoveredIndex = -1;
-                updateOhlcvDisplay();
-                canvas.repaint();
+                if (dragStart == null) {
+                    mousePoint = null;
+                    hoveredIndex = -1;
+                    updateOhlcvDisplay();
+                    canvas.repaint();
+                }
             }
         };
         canvas.addMouseListener(mouseHandler);
         canvas.addMouseMotionListener(mouseHandler);
+        canvas.addMouseWheelListener(mouseHandler);
     }
 
     private JPanel buildToolbar() {
@@ -215,6 +277,7 @@ public class CandlestickChartPanel extends JPanel {
                 for (Map.Entry<Timeframe, JButton> entry : tfButtons.entrySet()) {
                     styleTfButton(entry.getValue(), entry.getKey() == currentTimeframe);
                 }
+                resetZoom();
                 regenerateCandles();
                 repaint();
             });
@@ -272,25 +335,84 @@ public class CandlestickChartPanel extends JPanel {
 
         bar.add(left, BorderLayout.WEST);
 
-        // Right tools (Reset Zoom)
+        // Right tools (Map-style Zoom Controls: Zoom In, Zoom Out, Zoom %, Reset)
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
         right.setOpaque(false);
 
-        JButton btnReset = new JButton("Reset");
-        btnReset.setFont(Theme.MICRO);
-        btnReset.setForeground(Theme.TXT_MUTED);
-        btnReset.setBackground(Theme.SURFACE_SUB);
-        btnReset.setBorder(new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 3, 1));
-        btnReset.setFocusPainted(false);
-        btnReset.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        btnReset.addActionListener(e -> {
-            regenerateCandles();
-            repaint();
-        });
-        right.add(btnReset);
+        JPanel zoomGroup = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
+        zoomGroup.setOpaque(true);
+        zoomGroup.setBackground(new Color(0x10, 0x16, 0x22));
+        zoomGroup.setBorder(new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 4, 1));
 
+        JButton btnZoomOut = createZoomBtn("−", "Zoom Out (or Scroll Down)", e -> zoomOut());
+        lblZoomBadge.setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 8.5f));
+        lblZoomBadge.setForeground(Theme.TXT_MUTED);
+        lblZoomBadge.setBorder(BorderFactory.createEmptyBorder(0, 4, 0, 4));
+        JButton btnZoomIn = createZoomBtn("+", "Zoom In (or Scroll Up)", e -> zoomIn());
+        JButton btnReset = createZoomBtn("⟲", "Reset Zoom / Pan (or Double Click)", e -> resetZoom());
+
+        zoomGroup.add(btnZoomOut);
+        zoomGroup.add(lblZoomBadge);
+        zoomGroup.add(btnZoomIn);
+        zoomGroup.add(btnReset);
+
+        right.add(zoomGroup);
         bar.add(right, BorderLayout.EAST);
         return bar;
+    }
+
+    public void zoomIn() {
+        setZoom(zoomLevel * 1.25, -1);
+    }
+
+    public void zoomOut() {
+        setZoom(zoomLevel / 1.25, -1);
+    }
+
+    public void resetZoom() {
+        zoomLevel = 1.0;
+        panOffset = 0.0;
+        updateZoomBadge();
+        repaint();
+    }
+
+    public void setZoom(double newZoom, int mouseX) {
+        double oldZoom = zoomLevel;
+        zoomLevel = Math.max(1.0, Math.min(10.0, newZoom));
+        if (zoomLevel <= 1.001) {
+            zoomLevel = 1.0;
+            panOffset = 0.0;
+        } else if (!candles.isEmpty()) {
+            int oldVis = Math.max(8, (int) Math.round(candles.size() / oldZoom));
+            int newVis = Math.max(8, (int) Math.round(candles.size() / zoomLevel));
+            double frac = 0.5;
+            int chartW = getWidth() - PAD_LEFT - PAD_RIGHT;
+            if (mouseX >= PAD_LEFT && chartW > 0) {
+                frac = Math.max(0.0, Math.min(1.0, (double) (mouseX - PAD_LEFT) / chartW));
+            }
+            double oldCenter = panOffset + frac * oldVis;
+            panOffset = Math.max(0.0, Math.min(candles.size() - newVis, oldCenter - frac * newVis));
+        }
+        updateZoomBadge();
+        repaint();
+    }
+
+    private void updateZoomBadge() {
+        lblZoomBadge.setText(String.format(Locale.US, "%d%%", (int) Math.round(zoomLevel * 100)));
+        lblZoomBadge.setForeground(zoomLevel > 1.01 ? Theme.ACCENT : Theme.TXT_MUTED);
+    }
+
+    private JButton createZoomBtn(String text, String tooltip, java.awt.event.ActionListener al) {
+        JButton b = new JButton(text);
+        b.setFont(new Font("SansSerif", Font.BOLD, 11));
+        b.setForeground(Theme.TXT_SECONDARY);
+        b.setBackground(Theme.SURFACE_SUB);
+        b.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 6));
+        b.setFocusPainted(false);
+        b.setToolTipText(tooltip);
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        b.addActionListener(al);
+        return b;
     }
 
     private JPanel createDivider() {
@@ -440,6 +562,7 @@ public class CandlestickChartPanel extends JPanel {
 
     public void setAsset(Asset asset) {
         this.currentAsset = asset;
+        resetZoom();
         regenerateCandles();
         updateOhlcvDisplay();
         repaint();
@@ -558,10 +681,13 @@ public class CandlestickChartPanel extends JPanel {
             return;
         }
 
-        int n = candles.size();
-        double candlePitch = (double) chartW / n;
-        int idx = (int) (mx / candlePitch);
-        hoveredIndex = Math.max(0, Math.min(n - 1, idx));
+        int totalN = candles.size();
+        int visibleN = Math.max(8, (int) Math.round(totalN / zoomLevel));
+        int startIndex = Math.max(0, Math.min(totalN - visibleN, (int) Math.round(panOffset)));
+        double candlePitch = (double) chartW / visibleN;
+        int localIdx = (int) (mx / candlePitch);
+        int targetIdx = startIndex + localIdx;
+        hoveredIndex = Math.max(0, Math.min(totalN - 1, targetIdx));
     }
 
     private void updateOhlcvDisplay() {
@@ -628,12 +754,19 @@ public class CandlestickChartPanel extends JPanel {
             int volH = Math.max(35, (int) (chartH * 0.18));
             int priceH = chartH - volH - 10;
 
-            // 1. Min / Max Price Computation
+            // 1. Min / Max Price Computation on visible slice
+            int totalN = candles.size();
+            int visibleN = Math.max(8, (int) Math.round(totalN / zoomLevel));
+            int startIndex = Math.max(0, Math.min(totalN - visibleN, (int) Math.round(panOffset)));
+            int endIndex = Math.min(totalN, startIndex + visibleN);
+            int n = endIndex - startIndex;
+
             double minP = Double.MAX_VALUE;
             double maxP = -Double.MAX_VALUE;
             double maxVol = 1.0;
 
-            for (Candle c : candles) {
+            for (int i = startIndex; i < endIndex; i++) {
+                Candle c = candles.get(i);
                 minP = Math.min(minP, c.low());
                 maxP = Math.max(maxP, c.high());
                 maxVol = Math.max(maxVol, c.volume());
@@ -673,18 +806,18 @@ public class CandlestickChartPanel extends JPanel {
             g2.setStroke(new BasicStroke(1.0f));
             g2.drawLine(PAD_LEFT, volY, PAD_LEFT + chartW, volY);
 
-            // 4. Render Slender Candlesticks & Volume Bars
-            int n = candles.size();
+            // 4. Render Candlesticks & Volume Bars
             double pitch = (double) chartW / n;
-            // Slender body width (between 4px and 8px) so candles never merge into blocks
-            double candleBodyW = Math.max(4.0, Math.min(8.0, pitch * 0.38));
+            // Slender body width scales smoothly when zooming in
+            double candleBodyW = Math.max(3.0, Math.min(24.0, pitch * 0.65));
 
             // Arrays for Line/Area chart mode
             int[] polyX = new int[n + 2];
             int[] polyY = new int[n + 2];
 
             for (int i = 0; i < n; i++) {
-                Candle c = candles.get(i);
+                int cIdx = startIndex + i;
+                Candle c = candles.get(cIdx);
                 int cx = (int) (PAD_LEFT + i * pitch + pitch / 2.0);
 
                 double o = c.open();
@@ -692,8 +825,8 @@ public class CandlestickChartPanel extends JPanel {
                 double hi = c.high();
                 double lo = c.low();
 
-                if (currentStyle == ChartStyle.HEIKIN_ASHI && i > 0) {
-                    Candle prevC = candles.get(i - 1);
+                if (currentStyle == ChartStyle.HEIKIN_ASHI && cIdx > 0) {
+                    Candle prevC = candles.get(cIdx - 1);
                     o = (prevC.open() + prevC.close()) / 2.0;
                     cl = (c.open() + c.high() + c.low() + c.close()) / 4.0;
                     hi = Math.max(c.high(), Math.max(o, cl));
@@ -728,7 +861,7 @@ public class CandlestickChartPanel extends JPanel {
                     // 2. Prominent Lower Wick (from bodyBottom down to yLow)
                     g2.drawLine(cx, bodyBottom, cx, yLow);
 
-                    // 3. Slender Real Body with crisp border
+                    // 3. Real Body with crisp border
                     g2.setColor(bodyFill);
                     g2.fillRect(bodyLeft, bodyTop, (int) candleBodyW, bodyH);
                     g2.setColor(bodyBorder);
@@ -787,52 +920,54 @@ public class CandlestickChartPanel extends JPanel {
             }
 
             // 6. Moving Average Overlays (SMA 20 & EMA 50)
-            if (showSma20 && sma20Values.size() == n) {
+            if (showSma20 && sma20Values.size() == totalN) {
                 g2.setColor(new Color(0x4D, 0x8E, 0xFF));
                 g2.setStroke(new BasicStroke(1.4f));
                 for (int i = 0; i < n - 1; i++) {
                     int x1 = (int) (PAD_LEFT + i * pitch + pitch / 2.0);
-                    int y1 = PAD_TOP + (int) ((maxP - sma20Values.get(i)) / effectiveSpread * priceH);
+                    int y1 = PAD_TOP + (int) ((maxP - sma20Values.get(startIndex + i)) / effectiveSpread * priceH);
                     int x2 = (int) (PAD_LEFT + (i + 1) * pitch + pitch / 2.0);
-                    int y2 = PAD_TOP + (int) ((maxP - sma20Values.get(i + 1)) / effectiveSpread * priceH);
+                    int y2 = PAD_TOP + (int) ((maxP - sma20Values.get(startIndex + i + 1)) / effectiveSpread * priceH);
                     g2.drawLine(x1, y1, x2, y2);
                 }
             }
 
-            if (showEma50 && ema50Values.size() == n) {
+            if (showEma50 && ema50Values.size() == totalN) {
                 g2.setColor(new Color(0x4A, 0xE1, 0x76, 210));
                 g2.setStroke(new BasicStroke(1.4f));
                 for (int i = 0; i < n - 1; i++) {
                     int x1 = (int) (PAD_LEFT + i * pitch + pitch / 2.0);
-                    int y1 = PAD_TOP + (int) ((maxP - ema50Values.get(i)) / effectiveSpread * priceH);
+                    int y1 = PAD_TOP + (int) ((maxP - ema50Values.get(startIndex + i)) / effectiveSpread * priceH);
                     int x2 = (int) (PAD_LEFT + (i + 1) * pitch + pitch / 2.0);
-                    int y2 = PAD_TOP + (int) ((maxP - ema50Values.get(i + 1)) / effectiveSpread * priceH);
+                    int y2 = PAD_TOP + (int) ((maxP - ema50Values.get(startIndex + i + 1)) / effectiveSpread * priceH);
                     g2.drawLine(x1, y1, x2, y2);
                 }
             }
 
             // 7. Active CMP Dashed Price Line & Right Callout Pill
-            Candle lastC = candles.get(n - 1);
+            Candle lastC = candles.get(totalN - 1);
             int lastY = PAD_TOP + (int) ((maxP - lastC.close()) / effectiveSpread * priceH);
 
-            g2.setColor(new Color(0x4A, 0xE1, 0x76, 180));
-            g2.setStroke(dashStroke);
-            g2.drawLine(PAD_LEFT, lastY, PAD_LEFT + chartW, lastY);
+            if (lastY >= PAD_TOP && lastY <= PAD_TOP + priceH) {
+                g2.setColor(new Color(0x4A, 0xE1, 0x76, 180));
+                g2.setStroke(dashStroke);
+                g2.drawLine(PAD_LEFT, lastY, PAD_LEFT + chartW, lastY);
 
-            // Active price badge on right axis
-            int badgeW = 68;
-            int badgeH = 18;
-            int badgeX = PAD_LEFT + chartW + 2;
-            int badgeY = Math.max(PAD_TOP, Math.min(PAD_TOP + priceH - badgeH, lastY - badgeH / 2));
+                // Active price badge on right axis
+                int badgeW = 68;
+                int badgeH = 18;
+                int badgeX = PAD_LEFT + chartW + 2;
+                int badgeY = Math.max(PAD_TOP, Math.min(PAD_TOP + priceH - badgeH, lastY - badgeH / 2));
 
-            g2.setColor(new Color(0x00, 0x41, 0x19));
-            g2.fillRoundRect(badgeX, badgeY, badgeW, badgeH, 4, 4);
-            g2.setColor(new Color(0x4A, 0xE1, 0x76));
-            g2.drawRoundRect(badgeX, badgeY, badgeW, badgeH, 4, 4);
+                g2.setColor(new Color(0x00, 0x41, 0x19));
+                g2.fillRoundRect(badgeX, badgeY, badgeW, badgeH, 4, 4);
+                g2.setColor(new Color(0x4A, 0xE1, 0x76));
+                g2.drawRoundRect(badgeX, badgeY, badgeW, badgeH, 4, 4);
 
-            g2.setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 9f));
-            String lastPStr = String.format(Locale.US, "%s%,.2f", cur, lastC.close());
-            g2.drawString(lastPStr, badgeX + 4, badgeY + 13);
+                g2.setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 9f));
+                String lastPStr = String.format(Locale.US, "%s%,.2f", cur, lastC.close());
+                g2.drawString(lastPStr, badgeX + 4, badgeY + 13);
+            }
 
             // 8. Floating Indicator HUD (Top Left Overlay)
             int hudX = PAD_LEFT + 12;
@@ -850,10 +985,30 @@ public class CandlestickChartPanel extends JPanel {
             g2.setColor(new Color(0x4A, 0xE1, 0x76));
             g2.drawString(String.format(Locale.US, "MACD: %+.2f", currentMacd), hudX + 96, hudY + 15);
 
+            // 8b. Map Navigation Minimap Overview Trackbar (when zoomed in)
+            if (zoomLevel > 1.05 && totalN > 0) {
+                int mmW = 120;
+                int mmH = 6;
+                int mmX = PAD_LEFT + chartW - mmW - 8;
+                int mmY = PAD_TOP + 8;
+                g2.setColor(new Color(0x10, 0x16, 0x22, 180));
+                g2.fillRoundRect(mmX, mmY, mmW, mmH, 3, 3);
+                g2.setColor(new Color(0x28, 0x34, 0x49));
+                g2.drawRoundRect(mmX, mmY, mmW, mmH, 3, 3);
+
+                double startFrac = (double) startIndex / totalN;
+                double visFrac = (double) n / totalN;
+                int thumbX = mmX + (int) (startFrac * mmW);
+                int thumbW = Math.max(8, (int) (visFrac * mmW));
+                g2.setColor(new Color(0x3B, 0x82, 0xF6, 200));
+                g2.fillRoundRect(thumbX, mmY, thumbW, mmH, 3, 3);
+            }
+
             // 9. Interactive Hover Crosshair & Tooltip
-            if (mousePoint != null && hoveredIndex >= 0 && hoveredIndex < n) {
+            if (mousePoint != null && hoveredIndex >= startIndex && hoveredIndex < endIndex) {
+                int localI = hoveredIndex - startIndex;
                 Candle hc = candles.get(hoveredIndex);
-                int hx = (int) (PAD_LEFT + hoveredIndex * pitch + pitch / 2.0);
+                int hx = (int) (PAD_LEFT + localI * pitch + pitch / 2.0);
                 int hy = PAD_TOP + (int) ((maxP - hc.close()) / effectiveSpread * priceH);
 
                 // Dashed crosshair lines

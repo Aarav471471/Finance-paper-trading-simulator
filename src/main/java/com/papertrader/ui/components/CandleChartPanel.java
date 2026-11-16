@@ -6,11 +6,20 @@ import com.papertrader.model.TradeMarker;
 import com.papertrader.ui.Theme;
 import com.papertrader.util.Formatter;
 
+import javax.swing.BorderFactory;
+import javax.swing.JButton;
+import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.SwingUtilities;
 import java.awt.BasicStroke;
+import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Cursor;
+import java.awt.FlowLayout;
+import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.Point;
 import java.awt.RenderingHints;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -27,7 +36,7 @@ import java.util.List;
  *  - thin line (wick) = highest and lowest price, thick body = open to close
  *  - volume bars at the bottom
  *  - move the mouse to see a crosshair with the candle's open/high/low/close
- *  - scroll the mouse wheel to zoom in and out
+ *  - map-style zoom in / zoom out controls, click-drag pan timeline, wheel zoom, double-click reset
  *  - optional BUY/SELL arrows (used by the backtest replay)
  */
 public class CandleChartPanel extends JPanel {
@@ -41,13 +50,46 @@ public class CandleChartPanel extends JPanel {
     private List<Candle> candles = new ArrayList<>();
     private List<TradeMarker> markers = new ArrayList<>();
     private boolean dailyLabels = false;
-    private int visibleCount = 80;
     private int hoverX = -1;
     private int hoverY = -1;
 
+    // Map-style Zoom & Pan
+    private double zoomLevel = 1.0;
+    private double panOffset = 0.0;
+    private final JLabel lblZoomBadge = new JLabel("100%");
+
     public CandleChartPanel() {
+        setLayout(new BorderLayout());
         setBackground(Theme.CARD);
+
+        // Header controls (top right map zoom buttons)
+        JPanel topBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 4));
+        topBar.setOpaque(false);
+
+        JPanel zoomGroup = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
+        zoomGroup.setOpaque(true);
+        zoomGroup.setBackground(new Color(0x10, 0x16, 0x22));
+        zoomGroup.setBorder(new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 4, 1));
+
+        JButton btnZoomOut = createZoomBtn("−", "Zoom Out (or Scroll Down)", e -> zoomOut());
+        lblZoomBadge.setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 8.5f));
+        lblZoomBadge.setForeground(Theme.TXT_MUTED);
+        lblZoomBadge.setBorder(BorderFactory.createEmptyBorder(0, 4, 0, 4));
+        JButton btnZoomIn = createZoomBtn("+", "Zoom In (or Scroll Up)", e -> zoomIn());
+        JButton btnReset = createZoomBtn("⟲", "Reset Zoom / Pan (or Double Click)", e -> resetZoom());
+
+        zoomGroup.add(btnZoomOut);
+        zoomGroup.add(lblZoomBadge);
+        zoomGroup.add(btnZoomIn);
+        zoomGroup.add(btnReset);
+
+        topBar.add(zoomGroup);
+        add(topBar, BorderLayout.NORTH);
+
         MouseAdapter mouse = new MouseAdapter() {
+            private Point dragStart = null;
+            private double panStart = 0.0;
+
             @Override
             public void mouseMoved(MouseEvent e) {
                 hoverX = e.getX();
@@ -56,20 +98,110 @@ public class CandleChartPanel extends JPanel {
             }
 
             @Override
-            public void mouseExited(MouseEvent e) {
-                hoverX = -1;
-                repaint();
+            public void mousePressed(MouseEvent e) {
+                if (SwingUtilities.isLeftMouseButton(e)) {
+                    dragStart = e.getPoint();
+                    panStart = panOffset;
+                    setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
+                }
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                dragStart = null;
+                setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
+            }
+
+            @Override
+            public void mouseDragged(MouseEvent e) {
+                if (dragStart != null && !candles.isEmpty()) {
+                    int totalN = candles.size();
+                    int width = getWidth() - PAD_LEFT - PAD_RIGHT;
+                    int baseCount = Math.min(totalN, 80);
+                    int count = Math.max(10, Math.min(totalN, (int) Math.round(baseCount / zoomLevel)));
+                    if (width > 0 && totalN > count) {
+                        double slot = (double) width / count;
+                        int dx = e.getX() - dragStart.x;
+                        double delta = dx / slot;
+                        int maxPan = totalN - count;
+                        panOffset = Math.max(0.0, Math.min(maxPan, panStart + delta));
+                        hoverX = e.getX();
+                        hoverY = e.getY();
+                        repaint();
+                    }
+                }
             }
 
             @Override
             public void mouseWheelMoved(MouseWheelEvent e) {
-                visibleCount = Math.max(15, Math.min(400, visibleCount + e.getWheelRotation() * 8));
-                repaint();
+                if (e.getWheelRotation() < 0) {
+                    setZoom(zoomLevel * 1.18);
+                } else {
+                    setZoom(zoomLevel / 1.18);
+                }
+            }
+
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 2) {
+                    resetZoom();
+                }
+            }
+
+            @Override
+            public void mouseExited(MouseEvent e) {
+                if (dragStart == null) {
+                    hoverX = -1;
+                    repaint();
+                }
             }
         };
         addMouseListener(mouse);
         addMouseMotionListener(mouse);
         addMouseWheelListener(mouse);
+    }
+
+    public void zoomIn() {
+        setZoom(zoomLevel * 1.25);
+    }
+
+    public void zoomOut() {
+        setZoom(zoomLevel / 1.25);
+    }
+
+    public void resetZoom() {
+        zoomLevel = 1.0;
+        panOffset = 0.0;
+        updateZoomBadge();
+        repaint();
+    }
+
+    public void setZoom(double newZoom) {
+        zoomLevel = Math.max(1.0, Math.min(10.0, newZoom));
+        if (zoomLevel <= 1.001) {
+            zoomLevel = 1.0;
+            panOffset = 0.0;
+        }
+        updateZoomBadge();
+        repaint();
+    }
+
+    private void updateZoomBadge() {
+        lblZoomBadge.setText(String.format(java.util.Locale.US, "%d%%", (int) Math.round(zoomLevel * 100)));
+        lblZoomBadge.setForeground(zoomLevel > 1.01 ? Theme.ACCENT : Theme.TXT_MUTED);
+    }
+
+    private JButton createZoomBtn(String text, String tooltip, java.awt.event.ActionListener al) {
+        JButton b = new JButton(text);
+        b.setFont(new Font("SansSerif", Font.BOLD, 11));
+        b.setForeground(Theme.TXT_SECONDARY);
+        b.setBackground(Theme.CARD);
+        b.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 6));
+        b.setFocusPainted(false);
+        b.setToolTipText(tooltip);
+        b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        b.addActionListener(al);
+        return b;
     }
 
     public void setData(String title, List<Candle> candles, boolean dailyLabels) {
@@ -81,6 +213,7 @@ public class CandleChartPanel extends JPanel {
         this.candles = candles;
         this.markers = markers;
         this.dailyLabels = dailyLabels;
+        resetZoom();
         repaint();
     }
 
@@ -106,8 +239,16 @@ public class CandleChartPanel extends JPanel {
         int volumeTop = PAD_TOP + priceHeight + 8;
         int volumeHeight = fullHeight - priceHeight - 8;
 
-        int count = Math.min(visibleCount, candles.size());
-        List<Candle> view = candles.subList(candles.size() - count, candles.size());
+        int totalN = candles.size();
+        int baseCount = Math.min(totalN, 80);
+        int count = Math.max(10, Math.min(totalN, (int) Math.round(baseCount / zoomLevel)));
+        int maxPan = totalN - count;
+        int pan = (int) Math.round(Math.max(0, Math.min(maxPan, panOffset)));
+        int startIdx = Math.max(0, totalN - count - pan);
+        int endIdx = Math.min(totalN, startIdx + count);
+        count = endIdx - startIdx;
+        List<Candle> view = candles.subList(startIdx, endIdx);
+
         double slot = (double) width / count;
         double bodyWidth = Math.max(1, slot * 0.65);
 
@@ -162,6 +303,25 @@ public class CandleChartPanel extends JPanel {
                     drawMarker(g2, m.side(), x, view.get(i), top, range, priceHeight);
                 }
             }
+        }
+
+        // Minimap overview trackbar (when zoomed in)
+        if (zoomLevel > 1.05 && totalN > count) {
+            int mmW = 90;
+            int mmH = 5;
+            int mmX = PAD_LEFT + width - mmW - 8;
+            int mmY = 8;
+            g2.setColor(new Color(0x10, 0x16, 0x22, 180));
+            g2.fillRoundRect(mmX, mmY, mmW, mmH, 3, 3);
+            g2.setColor(Theme.BORDER);
+            g2.drawRoundRect(mmX, mmY, mmW, mmH, 3, 3);
+
+            double startFrac = (double) startIdx / totalN;
+            double visFrac = (double) count / totalN;
+            int thumbX = mmX + (int) (startFrac * mmW);
+            int thumbW = Math.max(6, (int) (visFrac * mmW));
+            g2.setColor(new Color(0x3B, 0x82, 0xF6, 200));
+            g2.fillRoundRect(thumbX, mmY, thumbW, mmH, 3, 3);
         }
 
         // time labels
