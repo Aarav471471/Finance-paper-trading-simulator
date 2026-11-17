@@ -1,5 +1,10 @@
 package com.papertrader.ui;
 
+import com.papertrader.ui.components.ResponsiveScrollPane;
+import com.papertrader.ui.components.ResponsiveGridLayout;
+import com.papertrader.ui.components.LeadingTrailingLayout;
+import com.papertrader.ui.components.WrapLayout;
+import com.papertrader.ui.components.WrappingLabel;
 import com.papertrader.service.ChartService;
 import com.papertrader.feed.YahooSymbols;
 import com.papertrader.model.Asset;
@@ -74,6 +79,9 @@ import java.util.function.Consumer;
  *    - Pinned Simulated Quick Paper Trade Ticket directly wired to TradingService.
  */
 public class StockDetailsPanel extends BasePanel {
+    /** Width of the trade ticket column on the right. */
+    private static final int RIGHT_COLUMN_WIDTH = 380;
+
 
     private final AuthService authService;
     private final MarketService marketService;
@@ -137,8 +145,10 @@ public class StockDetailsPanel extends BasePanel {
     private String shownPeersFor;
 
     // Section 3 dynamic parts
-    private final JLabel overviewDesc = new JLabel();
-    private final JPanel overviewChips = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+    /** Company description; a wrapping text area so it fits whatever width the column has. */
+    private final WrappingLabel overviewDesc =
+            new WrappingLabel("", Theme.BODY.deriveFont(11f), new Color(0xDC, 0xE2, 0xF7));
+    private final JPanel overviewChips = new JPanel(new WrapLayout(FlowLayout.LEFT, 6, 4));
     private final JPanel overviewBars = new JPanel(new GridLayout(2, 2, 10, 6));
     private final JLabel unitLbl = new JLabel("Consolidated in INR Cr");
     private final DefaultTableModel financialsModel = new DefaultTableModel() {
@@ -242,10 +252,10 @@ public class StockDetailsPanel extends BasePanel {
                 BorderFactory.createEmptyBorder(10, 16, 10, 16)));
 
         // Top Row: Breadcrumbs + Badges
-        JPanel row1 = new JPanel(new BorderLayout(8, 0));
+        JPanel row1 = LeadingTrailingLayout.newRow(8, 6);
         row1.setOpaque(false);
 
-        JPanel leftBadges = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        JPanel leftBadges = new JPanel(new WrapLayout(FlowLayout.LEFT, 6, 0));
         leftBadges.setOpaque(false);
 
         // Breadcrumb
@@ -311,10 +321,10 @@ public class StockDetailsPanel extends BasePanel {
         leftBadges.add(badgeIsin);
         leftBadges.add(badgeIndex);
         leftBadges.add(badgeStatus);
-        row1.add(leftBadges, BorderLayout.WEST);
+        row1.add(leftBadges);
 
         // Right Utility Controls & Execution Triggers
-        JPanel rightTools = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        JPanel rightTools = new JPanel(new WrapLayout(FlowLayout.RIGHT, 6, 0));
         rightTools.setOpaque(false);
 
         btnWatchlist.setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 9.5f));
@@ -365,16 +375,16 @@ public class StockDetailsPanel extends BasePanel {
         rightTools.add(btnCompare);
         rightTools.add(btnBuyTrigger);
         rightTools.add(btnSellTrigger);
-        row1.add(rightTools, BorderLayout.EAST);
+        row1.add(rightTools);
 
         banner.add(row1);
         banner.add(Box.createVerticalStrut(6));
 
         // Bottom Row: Asset Title + Industry + Hero CMP Readout
-        JPanel row2 = new JPanel(new BorderLayout(8, 0));
+        JPanel row2 = LeadingTrailingLayout.newRow(8, 6);
         row2.setOpaque(false);
 
-        JPanel leftTitle = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        JPanel leftTitle = new JPanel(new WrapLayout(FlowLayout.LEFT, 10, 0));
         leftTitle.setOpaque(false);
 
         assetTitle.setFont(Theme.TITLE.deriveFont(Font.BOLD, 17f));
@@ -385,10 +395,10 @@ public class StockDetailsPanel extends BasePanel {
 
         leftTitle.add(assetTitle);
         leftTitle.add(assetSector);
-        row2.add(leftTitle, BorderLayout.WEST);
+        row2.add(leftTitle);
 
         // Price Readout
-        JPanel rightPrice = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 0));
+        JPanel rightPrice = new JPanel(new WrapLayout(FlowLayout.RIGHT, 12, 0));
         rightPrice.setOpaque(false);
 
         heroCmp.setFont(Theme.MONO_TITLE.deriveFont(Font.BOLD, 18f));
@@ -403,7 +413,7 @@ public class StockDetailsPanel extends BasePanel {
         rightPrice.add(heroCmp);
         rightPrice.add(heroDelta);
         rightPrice.add(heroTickTime);
-        row2.add(rightPrice, BorderLayout.EAST);
+        row2.add(rightPrice);
 
         banner.add(row2);
         return banner;
@@ -455,24 +465,36 @@ public class StockDetailsPanel extends BasePanel {
         // Section 6: Real-time News & Filings Feed
         leftWorkspaceCol.add(buildSection6News());
 
-        JScrollPane leftScroll = new JScrollPane(leftWorkspaceCol);
-        leftScroll.setOpaque(false);
-        leftScroll.getViewport().setOpaque(false);
-        leftScroll.setBorder(null);
-        leftScroll.getVerticalScrollBar().setUnitIncrement(16);
-        leftScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        // Both columns fit their width (no horizontal bar) and scroll vertically when needed.
+        JScrollPane leftScroll = new ResponsiveScrollPane(leftWorkspaceCol, ResponsiveScrollPane.FIT_CONTENT);
+        leftScroll.setMinimumSize(new Dimension(360, 0));
 
         // Right Column (3.5 Cols)
         JPanel rightCol = new JPanel(new BorderLayout());
         rightCol.setOpaque(false);
         rightCol.setBorder(BorderFactory.createEmptyBorder(12, 4, 16, 14));
         rightCol.add(ticketPanel, BorderLayout.NORTH);
+        JScrollPane rightScroll = new ResponsiveScrollPane(rightCol, ResponsiveScrollPane.FIT_CONTENT);
+        rightScroll.setMinimumSize(new Dimension(300, 0));
+        rightScroll.setPreferredSize(new Dimension(RIGHT_COLUMN_WIDTH, 400));
 
-        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, leftScroll, rightCol);
+        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, leftScroll, rightScroll);
         split.setOpaque(false);
         split.setBorder(null);
-        split.setResizeWeight(0.72);
+        // Extra width goes to the chart/details column; the trade ticket keeps its width.
+        split.setResizeWeight(1.0);
         split.setDividerSize(4);
+        // Start with the ticket column at its normal width, whatever the window size.
+        split.addComponentListener(new java.awt.event.ComponentAdapter() {
+            private boolean placed;
+            @Override
+            public void componentResized(java.awt.event.ComponentEvent e) {
+                if (!placed && split.getWidth() > 0) {
+                    placed = true;
+                    split.setDividerLocation(Math.max(360, split.getWidth() - RIGHT_COLUMN_WIDTH - split.getDividerSize()));
+                }
+            }
+        });
 
         wrap.add(split, BorderLayout.CENTER);
         return wrap;
@@ -504,7 +526,7 @@ public class StockDetailsPanel extends BasePanel {
         sec.add(Box.createVerticalStrut(10));
 
         // Dual Range Visualizers Container
-        JPanel rangeContainer = new JPanel(new GridLayout(1, 2, 12, 0));
+        JPanel rangeContainer = new JPanel(new ResponsiveGridLayout(2, 240, 12, 10));
         rangeContainer.setOpaque(true);
         rangeContainer.setBackground(new Color(0x14, 0x1B, 0x2B));
         rangeContainer.setBorder(BorderFactory.createCompoundBorder(
@@ -603,7 +625,7 @@ public class StockDetailsPanel extends BasePanel {
         sec.add(Box.createVerticalStrut(10));
 
         // 8 Fundamental Cards Grid (2x4)
-        JPanel grid = new JPanel(new GridLayout(2, 4, 8, 8));
+        JPanel grid = new JPanel(new ResponsiveGridLayout(4, 150, 8, 8));
         grid.setOpaque(false);
 
         String[] titles = {"PREV. CLOSE", "OPEN PRICE", "MARKET CAP", "VOLUME (TODAY)",
@@ -654,11 +676,11 @@ public class StockDetailsPanel extends BasePanel {
                 BorderFactory.createEmptyBorder(12, 14, 12, 14)));
 
         // Tab Navigation Bar
-        JPanel navBar = new JPanel(new BorderLayout());
+        JPanel navBar = new JPanel(new LeadingTrailingLayout(8, 4));
         navBar.setOpaque(false);
         navBar.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER_CUSTOM));
 
-        JPanel tabGroup = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        JPanel tabGroup = new JPanel(new WrapLayout(FlowLayout.LEFT, 4, 0));
         tabGroup.setOpaque(false);
 
         String[] tabNames = {"Overview", "Financial Statements", "Valuation & Solvency", "Shareholding Pattern"};
@@ -679,11 +701,11 @@ public class StockDetailsPanel extends BasePanel {
             tabButtons.put(t, b);
             tabGroup.add(b);
         }
-        navBar.add(tabGroup, BorderLayout.WEST);
+        navBar.add(tabGroup);
 
         unitLbl.setFont(Theme.MICRO);
         unitLbl.setForeground(Theme.TXT_MUTED);
-        navBar.add(unitLbl, BorderLayout.EAST);
+        navBar.add(unitLbl);
         sec.add(navBar, BorderLayout.NORTH);
 
         // 4 Panes in CardLayout
@@ -724,7 +746,7 @@ public class StockDetailsPanel extends BasePanel {
         p.add(title);
         p.add(Box.createVerticalStrut(4));
 
-        overviewDesc.setText(descriptionHtml("Loading company profile..."));
+        overviewDesc.setText(descriptionText("Loading company profile..."));
         p.add(overviewDesc);
         p.add(Box.createVerticalStrut(8));
 
@@ -748,13 +770,8 @@ public class StockDetailsPanel extends BasePanel {
         return p;
     }
 
-    private static String descriptionHtml(String text) {
-        String safe = text.replace("&", "&amp;").replace("<", "&lt;");
-        if (safe.length() > 600) {
-            safe = safe.substring(0, 600) + "...";
-        }
-        return "<html><body style='width: 600px; color: #DCE2F7; font-family: Inter; font-size: 11px; line-height: 1.4;'>"
-                + safe + "</body></html>";
+    private static String descriptionText(String text) {
+        return text.length() > 600 ? text.substring(0, 600) + "..." : text;
     }
 
     private JLabel chip(String text) {
@@ -833,7 +850,7 @@ public class StockDetailsPanel extends BasePanel {
     }
 
     private JPanel buildTab3Solvency() {
-        JPanel p = new JPanel(new GridLayout(2, 3, 8, 8));
+        JPanel p = new JPanel(new ResponsiveGridLayout(3, 150, 8, 8));
         p.setOpaque(true);
         p.setBackground(new Color(0x14, 0x1B, 0x2B));
         p.setBorder(BorderFactory.createCompoundBorder(
@@ -892,7 +909,7 @@ public class StockDetailsPanel extends BasePanel {
         p.add(shareTitle);
         p.add(Box.createVerticalStrut(10));
 
-        JPanel cards = new JPanel(new GridLayout(1, 4, 8, 0));
+        JPanel cards = new JPanel(new ResponsiveGridLayout(4, 130, 8, 8));
         cards.setOpaque(false);
         String[] holders = {"Insiders / Promoters", "Institutions", "No. of Institutions", "Public & Retail"};
         Color[] colors = {new Color(0x4D, 0x8E, 0xFF), new Color(0x4A, 0xE1, 0x76),
@@ -929,7 +946,8 @@ public class StockDetailsPanel extends BasePanel {
     }
 
     private JPanel buildSection4TechnicalGauge() {
-        JPanel sec = new JPanel(new BorderLayout(12, 0));
+        // Gauge beside the checklist, or above it when the column is narrow.
+        JPanel sec = new JPanel(new LeadingTrailingLayout(12, 12, 360));
         sec.setOpaque(true);
         sec.setBackground(Theme.CARD_BG);
         sec.setBorder(BorderFactory.createCompoundBorder(
@@ -938,7 +956,7 @@ public class StockDetailsPanel extends BasePanel {
 
         // Left: Gauge Panel
         gaugePanel.setPreferredSize(new Dimension(300, 160));
-        sec.add(gaugePanel, BorderLayout.WEST);
+        sec.add(gaugePanel);
 
         // Right: Key Oscillator & Momentum Checklist
         JPanel right = new JPanel();
@@ -951,7 +969,7 @@ public class StockDetailsPanel extends BasePanel {
         right.add(chkTitle);
         right.add(Box.createVerticalStrut(6));
 
-        JPanel grid = new JPanel(new GridLayout(3, 2, 8, 6));
+        JPanel grid = new JPanel(new ResponsiveGridLayout(2, 190, 8, 6));
         grid.setOpaque(false);
         String[] names = {"RSI (14)", "MACD (12,26,9)", "EMA 20", "EMA 50", "EMA 200", "Bollinger Bands"};
         for (int i = 0; i < 6; i++) {
@@ -962,7 +980,7 @@ public class StockDetailsPanel extends BasePanel {
         right.add(Box.createVerticalStrut(8));
 
         // Analyst Consensus Strip
-        JPanel consensusStrip = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        JPanel consensusStrip = new JPanel(new WrapLayout(FlowLayout.LEFT, 8, 0));
         consensusStrip.setOpaque(true);
         consensusStrip.setBackground(new Color(0x14, 0x1B, 0x2B));
         consensusStrip.setBorder(BorderFactory.createCompoundBorder(
@@ -986,7 +1004,7 @@ public class StockDetailsPanel extends BasePanel {
         consensusStrip.add(conCount);
         right.add(consensusStrip);
 
-        sec.add(right, BorderLayout.CENTER);
+        sec.add(right);
         return sec;
     }
 
@@ -1288,7 +1306,7 @@ public class StockDetailsPanel extends BasePanel {
             }
             if (shownFundamentals != null || overviewChips.getComponentCount() == 0) {
                 shownFundamentals = null;
-                overviewDesc.setText(descriptionHtml(why));
+                overviewDesc.setText(descriptionText(why));
                 overviewChips.removeAll();
                 overviewChips.add(chip(asset.getType()));
                 overviewBars.removeAll();
@@ -1335,7 +1353,7 @@ public class StockDetailsPanel extends BasePanel {
         }
         shownFundamentals = f;
 
-        overviewDesc.setText(descriptionHtml(f.description().isEmpty() ? "No company description available." : f.description()));
+        overviewDesc.setText(descriptionText(f.description().isEmpty() ? "No company description available." : f.description()));
         overviewChips.removeAll();
         if (!f.ceo().isEmpty()) overviewChips.add(chip("Leader: " + f.ceo()));
         if (!f.industry().isEmpty()) overviewChips.add(chip("Industry: " + f.industry()));
