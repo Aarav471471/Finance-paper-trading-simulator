@@ -1,5 +1,8 @@
 package com.papertrader.ui;
 
+import com.papertrader.ui.components.ResponsiveGridLayout;
+import com.papertrader.ui.components.LeadingTrailingLayout;
+import com.papertrader.ui.components.WrapLayout;
 import com.papertrader.analytics.PerformanceAnalyzer;
 import com.papertrader.analytics.PerformanceReport;
 import com.papertrader.analytics.TradeStats;
@@ -208,12 +211,9 @@ public class HistoryPanel extends BasePanel {
         // 6. Main Transaction Workspace (Table & Inspector Split)
         workspace.add(buildTableAndInspectorWorkspace());
 
-        JScrollPane scrollPane = new JScrollPane(workspace);
-        scrollPane.setBorder(BorderFactory.createEmptyBorder());
-        scrollPane.setBackground(Theme.APP_BG);
-        scrollPane.getViewport().setBackground(Theme.APP_BG);
-        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        // Fits the window width (no horizontal bar) and scrolls vertically when needed.
+        JScrollPane scrollPane = new com.papertrader.ui.components.ResponsiveScrollPane(
+                workspace, com.papertrader.ui.components.ResponsiveScrollPane.FIT_CONTENT, Theme.APP_BG);
 
         mainCardContainer.setOpaque(false);
         maximizedChartContainer.setOpaque(false);
@@ -267,7 +267,8 @@ public class HistoryPanel extends BasePanel {
     // =========================================================================
 
     private JPanel buildTopActionBar() {
-        JPanel bar = new JPanel(new BorderLayout(14, 8));
+        // Title on the left, period/export buttons on the right; they stack on narrow windows.
+        JPanel bar = new JPanel(new LeadingTrailingLayout(14, 8));
         bar.setBackground(Theme.SURFACE_SUB);
         bar.setBorder(BorderFactory.createCompoundBorder(
                 new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 10, 1),
@@ -303,10 +304,10 @@ public class HistoryPanel extends BasePanel {
         sub.setFont(Theme.MICRO);
         sub.setForeground(Theme.TXT_MUTED);
         left.add(sub);
-        bar.add(left, BorderLayout.WEST);
+        bar.add(left);
 
         // Right: Period Selector & Quick Export Buttons
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        JPanel right = new JPanel(new WrapLayout(FlowLayout.RIGHT, 6, 0));
         right.setOpaque(false);
 
         // Period Buttons
@@ -363,7 +364,7 @@ public class HistoryPanel extends BasePanel {
         btnTax.addActionListener(e -> onShowTaxReport());
         right.add(btnTax);
 
-        bar.add(right, BorderLayout.EAST);
+        bar.add(right);
         return bar;
     }
 
@@ -372,7 +373,8 @@ public class HistoryPanel extends BasePanel {
     // =========================================================================
 
     private JPanel buildKpiRow() {
-        JPanel grid = new JPanel(new GridLayout(1, 6, 10, 0));
+        // Six cards in a row, or more rows when the window is too narrow for that.
+        JPanel grid = new JPanel(new ResponsiveGridLayout(6, 165, 10, 10));
         grid.setOpaque(false);
         grid.add(cardTrades);
         grid.add(cardBuys);
@@ -471,7 +473,7 @@ public class HistoryPanel extends BasePanel {
         toolbar.add(Box.createVerticalStrut(8));
 
         // Bottom Row: 6 Filter Dropdowns
-        JPanel filterRow = new JPanel(new GridLayout(1, 6, 8, 0));
+        JPanel filterRow = new JPanel(new ResponsiveGridLayout(6, 130, 8, 8));
         filterRow.setOpaque(false);
 
         filterRow.add(buildDropdownCol("Asset Class", filterAssetClass));
@@ -530,7 +532,7 @@ public class HistoryPanel extends BasePanel {
         tableContainer.setBorder(new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 10, 1));
 
         // Status Tabs Header
-        JPanel tabHeader = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 6));
+        JPanel tabHeader = new JPanel(new WrapLayout(FlowLayout.LEFT, 4, 6));
         tabHeader.setBackground(Theme.SURFACE_SUB);
         tabHeader.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER_CUSTOM));
 

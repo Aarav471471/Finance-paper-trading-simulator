@@ -1,5 +1,7 @@
 package com.papertrader.ui.three;
 
+import com.papertrader.ui.components.LeadingTrailingLayout;
+import com.papertrader.ui.components.WrapLayout;
 import com.papertrader.ui.Theme;
 import com.papertrader.util.Formatter;
 
@@ -92,16 +94,16 @@ public class Portfolio3DView extends Base3DView {
     }
 
     private JPanel buildHudStrip() {
-        JPanel p = new JPanel(new BorderLayout(8, 0));
+        // Asset on the left, metrics on the right (or below it when the view is narrow).
+        JPanel p = new JPanel(new LeadingTrailingLayout(8, 2));
         p.setOpaque(true);
         p.setBackground(new java.awt.Color(0x13, 0x1A, 0x27));
         p.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER_CUSTOM),
                 BorderFactory.createEmptyBorder(4, 10, 4, 10)));
-        p.setPreferredSize(new Dimension(100, 28));
 
         // Left: Asset Symbol & Name + Return Pill
-        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        JPanel left = new JPanel(new WrapLayout(FlowLayout.LEFT, 6, 0));
         left.setOpaque(false);
 
         hudSym.setFont(Theme.MONO_BODY.deriveFont(java.awt.Font.BOLD, 11f));
@@ -119,10 +121,10 @@ public class Portfolio3DView extends Base3DView {
         left.add(hudSym);
         left.add(hudName);
         left.add(hudRet);
-        p.add(left, BorderLayout.WEST);
+        p.add(left);
 
         // Right: Key Metrics (Units, Avg, Value, PnL)
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 0));
+        JPanel right = new JPanel(new WrapLayout(FlowLayout.RIGHT, 12, 0));
         right.setOpaque(false);
 
         hudQty.setFont(Theme.MONO_TINY);
@@ -146,20 +148,19 @@ public class Portfolio3DView extends Base3DView {
         right.add(new JLabel("Unrealized:") {{ setFont(Theme.MICRO); setForeground(Theme.TXT_MUTED); }});
         right.add(hudPnl);
 
-        p.add(right, BorderLayout.EAST);
+        p.add(right);
         return p;
     }
 
     private JPanel buildLegendStrip() {
-        JPanel p = new JPanel(new BorderLayout());
+        JPanel p = new JPanel(new LeadingTrailingLayout(10, 0));
         p.setOpaque(true);
         p.setBackground(new java.awt.Color(0x0E, 0x14, 0x22));
         p.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(1, 0, 0, 0, Theme.BORDER_CUSTOM),
                 BorderFactory.createEmptyBorder(2, 10, 2, 10)));
-        p.setPreferredSize(new Dimension(100, 20));
 
-        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        JPanel left = new JPanel(new WrapLayout(FlowLayout.LEFT, 10, 0));
         left.setOpaque(false);
 
         JLabel lGain = new JLabel("● Profit / Positive Return");
@@ -177,12 +178,12 @@ public class Portfolio3DView extends Base3DView {
         left.add(lGain);
         left.add(lLoss);
         left.add(lHint);
-        p.add(left, BorderLayout.WEST);
+        p.add(left);
 
         JLabel lProj = new JLabel("Camera: ISO-45° Orbit");
         lProj.setFont(Theme.MICRO);
         lProj.setForeground(Theme.TXT_MUTED);
-        p.add(lProj, BorderLayout.EAST);
+        p.add(lProj);
 
         return p;
     }

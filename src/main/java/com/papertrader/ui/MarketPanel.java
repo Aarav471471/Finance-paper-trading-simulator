@@ -1,5 +1,7 @@
 package com.papertrader.ui;
 
+import com.papertrader.ui.components.LeadingTrailingLayout;
+import com.papertrader.ui.components.WrapLayout;
 import com.papertrader.model.MarketSnapshot;
 import com.papertrader.model.NewsItem;
 import com.papertrader.service.MarketDataService;
@@ -213,12 +215,9 @@ public class MarketPanel extends BasePanel {
         // Section 7: High Velocity Market Activity Strip
         mainScrollable.add(buildHighVelocityStrip());
 
-        JScrollPane scrollPane = new JScrollPane(mainScrollable);
-        scrollPane.setBorder(null);
-        scrollPane.setOpaque(false);
-        scrollPane.getViewport().setOpaque(false);
-        scrollPane.getVerticalScrollBar().setUnitIncrement(18);
-        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        // Fits the window width (no horizontal bar) and scrolls vertically when needed.
+        JScrollPane scrollPane = new com.papertrader.ui.components.ResponsiveScrollPane(
+                mainScrollable, com.papertrader.ui.components.ResponsiveScrollPane.FIT_CONTENT);
 
         centerContainer.add(scrollPane, BorderLayout.CENTER);
 
@@ -358,7 +357,8 @@ public class MarketPanel extends BasePanel {
     }
 
     private JPanel buildTelemetryRegionBar() {
-        JPanel bar = new JPanel(new BorderLayout(10, 0));
+        // Region controls on the left, telemetry on the right; they stack on narrow windows.
+        JPanel bar = LeadingTrailingLayout.newRow(10, 6);
         bar.setOpaque(true);
         bar.setBackground(Theme.CARD_BG);
         bar.setBorder(BorderFactory.createCompoundBorder(
@@ -366,7 +366,7 @@ public class MarketPanel extends BasePanel {
                 BorderFactory.createEmptyBorder(6, 10, 6, 10)));
 
         // Left: Region Buttons + Sub-Exchange + Session Badge
-        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        JPanel left = new JPanel(new WrapLayout(FlowLayout.LEFT, 8, 0));
         left.setOpaque(false);
 
         regionButtonsContainer.setOpaque(true);
@@ -394,10 +394,10 @@ public class MarketPanel extends BasePanel {
         sessionBadge.setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 8.5f));
         left.add(sessionBadge);
 
-        bar.add(left, BorderLayout.WEST);
+        bar.add(left);
 
         // Right: Breadth & VIX Telemetry
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        JPanel right = new JPanel(new WrapLayout(FlowLayout.RIGHT, 10, 0));
         right.setOpaque(false);
 
         JLabel breadth = breadthLbl;
@@ -418,7 +418,7 @@ public class MarketPanel extends BasePanel {
         right.add(new JLabel("|") {{ setForeground(Theme.BORDER_CUSTOM); }});
         right.add(vol);
 
-        bar.add(right, BorderLayout.EAST);
+        bar.add(right);
         return bar;
     }
 
@@ -904,7 +904,8 @@ public class MarketPanel extends BasePanel {
     }
 
     private JPanel buildFilterToolbar() {
-        JPanel bar = new JPanel(new BorderLayout(8, 0));
+        // Search on the left, filters on the right; they stack on narrow windows.
+        JPanel bar = LeadingTrailingLayout.newRow(8, 6);
         bar.setOpaque(true);
         bar.setBackground(Theme.CARD_BG);
         bar.setBorder(BorderFactory.createCompoundBorder(
@@ -916,7 +917,7 @@ public class MarketPanel extends BasePanel {
         left.setOpaque(true);
         left.setBackground(Theme.APP_BG);
         left.setBorder(new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 4, 1));
-        left.setPreferredSize(new Dimension(320, 28));
+        left.setPreferredSize(new Dimension(280, 28));
 
         JLabel sI = new JLabel(" 🔍 ");
         sI.setFont(Theme.MICRO);
@@ -937,10 +938,10 @@ public class MarketPanel extends BasePanel {
         });
         left.add(searchField, BorderLayout.CENTER);
 
-        bar.add(left, BorderLayout.WEST);
+        bar.add(left);
 
         // Right: Filters & Sort
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        JPanel right = new JPanel(new WrapLayout(FlowLayout.RIGHT, 6, 0));
         right.setOpaque(false);
 
         // Sector Combo
@@ -1007,7 +1008,7 @@ public class MarketPanel extends BasePanel {
         reset.addActionListener(e -> resetFilters());
         right.add(reset);
 
-        bar.add(right, BorderLayout.EAST);
+        bar.add(right);
         return bar;
     }
 

@@ -124,9 +124,17 @@ public class MainFrame extends JFrame {
         setContentPane(root);
 
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setMinimumSize(new Dimension(1200, 750));
-        setSize(1380, 840);
+        // Keep the window inside the screen: laptops with display scaling (e.g. 1366x768 at 125%)
+        // have far less room than 1380x840, and a larger window runs off the screen edge.
+        setMinimumSize(new Dimension(960, 600));
+        java.awt.Rectangle usable = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
+        int width = Math.min(1380, usable.width);
+        int height = Math.min(840, usable.height);
+        setSize(width, height);
         setLocationRelativeTo(null);
+        if (width < 1380 || height < 840) {
+            setExtendedState(getExtendedState() | MAXIMIZED_BOTH);
+        }
 
         new Timer(1000, e -> refreshCurrentPage()).start();
     }
@@ -188,7 +196,7 @@ public class MainFrame extends JFrame {
         // 2. Navigation Items
         ButtonGroup group = new ButtonGroup();
         for (String name : pages.keySet()) {
-            pageArea.add(pages.get(name), name);
+            pageArea.add(wrapPage(name, pages.get(name)), name);
             SidebarNavButton btn = new SidebarNavButton(name);
             btn.setAlignmentX(Component.LEFT_ALIGNMENT);
             btn.addActionListener(e -> showPage(name));
@@ -209,6 +217,14 @@ public class MainFrame extends JFrame {
         JPanel bottomSection = buildSidebarBottom();
         sidebar.add(bottomSection);
 
+        // BoxLayout lines children up by alignmentX; mixing LEFT and CENTER pushed the
+        // nav buttons half-way across the sidebar. Align everything to the left edge.
+        for (Component c : sidebar.getComponents()) {
+            if (c instanceof javax.swing.JComponent jc) {
+                jc.setAlignmentX(Component.LEFT_ALIGNMENT);
+            }
+        }
+
         JPanel shell = new JPanel(new BorderLayout());
         javax.swing.JScrollPane sidebarScroll = new javax.swing.JScrollPane(sidebar);
         sidebarScroll.setBorder(null);
@@ -221,6 +237,27 @@ public class MainFrame extends JFrame {
         shell.add(sidebarScroll, BorderLayout.WEST);
         shell.add(pageArea, BorderLayout.CENTER);
         return shell;
+    }
+
+    /**
+     * Shortest height (in pixels) each single-screen page can be squeezed to before it
+     * starts scrolling vertically. Pages not listed here (Markets, Stock Details, Trade,
+     * Portfolio, History) already scroll their own content.
+     */
+    private static final Map<String, Integer> PAGE_MIN_HEIGHTS = Map.of(
+            "Dashboard", 700,
+            "Analytics", 620,
+            "Backtest", 560,
+            "Auto-Trade", 560,
+            "Leaderboard", 420);
+
+    /** Puts a page inside a scroll pane that fits the window width and scrolls vertically on short windows. */
+    private Component wrapPage(String name, BasePanel page) {
+        Integer minHeight = PAGE_MIN_HEIGHTS.get(name);
+        if (minHeight == null) {
+            return page;
+        }
+        return new com.papertrader.ui.components.ResponsiveScrollPane(page, minHeight, page.getBackground());
     }
 
     private JPanel buildLiveFeedsSection() {

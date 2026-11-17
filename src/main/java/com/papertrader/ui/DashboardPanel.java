@@ -1,5 +1,7 @@
 package com.papertrader.ui;
 
+import com.papertrader.ui.components.LeadingTrailingLayout;
+import com.papertrader.ui.components.WrapLayout;
 import com.papertrader.model.Asset;
 import com.papertrader.model.Holding;
 import com.papertrader.model.User;
@@ -191,6 +193,9 @@ public class DashboardPanel extends BasePanel {
         gbc.gridy = 0;
         gbc.weightx = 0.22;
         gbc.weighty = 1.0;
+        // GridBagLayout falls back to minimum sizes when the window is narrow; give the side
+        // columns a usable minimum so the centre column absorbs the squeeze, not the order form.
+        watchlistPanel.setMinimumSize(new Dimension(200, 0));
         workspace.add(watchlistPanel, gbc);
 
         // 2. CENTER COLUMN: 3D Matrix + Performance Chart (53%)
@@ -224,6 +229,10 @@ public class DashboardPanel extends BasePanel {
         gbcR.insets = new Insets(3, 0, 0, 0);
         rightCol.add(ledgerPanel, gbcR);
 
+        rightCol.setMinimumSize(new Dimension(270, 0));
+        rightCol.setPreferredSize(new Dimension(270, 0));
+        centerCol.setMinimumSize(new Dimension(260, 0));
+
         gbc.gridx = 2;
         gbc.weightx = 0.25;
         gbc.insets = new Insets(0, 4, 0, 0);
@@ -238,12 +247,12 @@ public class DashboardPanel extends BasePanel {
         card.setBorder(Theme.terminalCardBorder());
 
         // Header matching HTML
-        JPanel header = new JPanel(new BorderLayout());
+        // Title on the left, camera tools on the right (or below it when the column is narrow).
+        JPanel header = new JPanel(new LeadingTrailingLayout(4, 0));
         header.setOpaque(false);
         header.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER_CUSTOM));
-        header.setPreferredSize(new Dimension(100, 24));
 
-        JPanel titles = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+        JPanel titles = new JPanel(new WrapLayout(FlowLayout.LEFT, 4, 2));
         titles.setOpaque(false);
 
         JLabel glyph = new JLabel("◫");
@@ -264,9 +273,9 @@ public class DashboardPanel extends BasePanel {
         titles.add(glyph);
         titles.add(title);
         titles.add(webgl);
-        header.add(titles, BorderLayout.WEST);
+        header.add(titles);
 
-        JPanel tools = new JPanel(new FlowLayout(FlowLayout.RIGHT, 3, 1));
+        JPanel tools = new JPanel(new WrapLayout(FlowLayout.RIGHT, 3, 1));
         tools.setOpaque(false);
 
         JButton isoBtn = new JButton("Iso");
@@ -326,7 +335,7 @@ public class DashboardPanel extends BasePanel {
         tools.add(zoomOut);
         tools.add(resetBtn);
 
-        header.add(tools, BorderLayout.EAST);
+        header.add(tools);
 
         card.add(header, BorderLayout.NORTH);
         card.add(portfolio3D, BorderLayout.CENTER);
