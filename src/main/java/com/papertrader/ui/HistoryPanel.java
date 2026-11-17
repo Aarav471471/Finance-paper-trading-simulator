@@ -41,6 +41,7 @@ import javax.swing.table.TableCellEditor;
 import javax.swing.table.TableCellRenderer;
 import java.awt.BasicStroke;
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Cursor;
@@ -118,6 +119,12 @@ public class HistoryPanel extends BasePanel {
     private final DailyHistogramCard histogramCard = new DailyHistogramCard();
     private final CumulativeGrowthCard growthCard = new CumulativeGrowthCard();
     private final WinLossDonutCard donutCard = new WinLossDonutCard();
+    private final JPanel analyticsRow = new JPanel(new GridLayout(1, 3, 10, 0));
+
+    // CardLayout container for full-screen chart maximize
+    private final CardLayout mainCardLayout = new CardLayout();
+    private final JPanel mainCardContainer = new JPanel(mainCardLayout);
+    private final JPanel maximizedChartContainer = new JPanel(new BorderLayout());
 
     // Row 3 Calendar & Quant
     private final MonthlyHeatmapCard heatmapCard = new MonthlyHeatmapCard();
@@ -161,7 +168,9 @@ public class HistoryPanel extends BasePanel {
     public HistoryPanel(AuthService authService, TradingService tradingService,
                         MarketService marketService, PortfolioService portfolioService,
                         Consumer<String> navHandler) {
-        super("History", "Audit simulated execution logs, evaluate quantitative win/loss distribution, and export regulatory statement ledgers.");
+        super("", ""); // Handled by custom terminal header
+        setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
+        removeAll();
         this.authService = authService;
         this.tradingService = tradingService;
         this.marketService = marketService;
@@ -174,7 +183,7 @@ public class HistoryPanel extends BasePanel {
         JPanel workspace = new JPanel();
         workspace.setLayout(new BoxLayout(workspace, BoxLayout.Y_AXIS));
         workspace.setBackground(Theme.APP_BG);
-        workspace.setBorder(BorderFactory.createEmptyBorder(12, 16, 20, 16));
+        workspace.setBorder(BorderFactory.createEmptyBorder(10, 14, 16, 14));
 
         // 1. Top Action & Export Bar
         workspace.add(buildTopActionBar());
@@ -205,7 +214,52 @@ public class HistoryPanel extends BasePanel {
         scrollPane.getViewport().setBackground(Theme.APP_BG);
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
         scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        add(scrollPane, BorderLayout.CENTER);
+
+        mainCardContainer.setOpaque(false);
+        maximizedChartContainer.setOpaque(false);
+        maximizedChartContainer.setBorder(BorderFactory.createEmptyBorder(12, 14, 16, 14));
+
+        mainCardContainer.add(scrollPane, "NORMAL");
+        mainCardContainer.add(maximizedChartContainer, "MAXIMIZED");
+        add(mainCardContainer, BorderLayout.CENTER);
+
+        histogramCard.setOnToggleMaximize(max -> {
+            if (max) {
+                growthCard.setMaximized(false);
+                analyticsRow.remove(histogramCard);
+                maximizedChartContainer.removeAll();
+                maximizedChartContainer.add(histogramCard, BorderLayout.CENTER);
+                mainCardLayout.show(mainCardContainer, "MAXIMIZED");
+            } else {
+                maximizedChartContainer.removeAll();
+                analyticsRow.removeAll();
+                analyticsRow.add(histogramCard);
+                analyticsRow.add(growthCard);
+                analyticsRow.add(donutCard);
+                mainCardLayout.show(mainCardContainer, "NORMAL");
+            }
+            mainCardContainer.revalidate();
+            mainCardContainer.repaint();
+        });
+
+        growthCard.setOnToggleMaximize(max -> {
+            if (max) {
+                histogramCard.setMaximized(false);
+                analyticsRow.remove(growthCard);
+                maximizedChartContainer.removeAll();
+                maximizedChartContainer.add(growthCard, BorderLayout.CENTER);
+                mainCardLayout.show(mainCardContainer, "MAXIMIZED");
+            } else {
+                maximizedChartContainer.removeAll();
+                analyticsRow.removeAll();
+                analyticsRow.add(histogramCard);
+                analyticsRow.add(growthCard);
+                analyticsRow.add(donutCard);
+                mainCardLayout.show(mainCardContainer, "NORMAL");
+            }
+            mainCardContainer.revalidate();
+            mainCardContainer.repaint();
+        });
     }
 
     // =========================================================================
@@ -228,7 +282,7 @@ public class HistoryPanel extends BasePanel {
         JPanel titleRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         titleRow.setOpaque(false);
         JLabel title = new JLabel("Transaction History & Analytics");
-        title.setFont(new Font("Inter", Font.BOLD, 18));
+        title.setFont(new Font("Inter", Font.BOLD, 17));
         title.setForeground(Theme.TXT_PRIMARY);
         titleRow.add(title);
 
@@ -243,16 +297,16 @@ public class HistoryPanel extends BasePanel {
         ));
         titleRow.add(auditBadge);
         left.add(titleRow);
-        left.add(Box.createVerticalStrut(3));
+        left.add(Box.createVerticalStrut(2));
 
-        JLabel sub = new JLabel("Audit simulated execution logs, evaluate quantitative win/loss distribution, and export regulatory statement ledgers.");
+        JLabel sub = new JLabel("Audit simulated executions, evaluate win/loss distribution & export ledgers.");
         sub.setFont(Theme.MICRO);
         sub.setForeground(Theme.TXT_MUTED);
         left.add(sub);
         bar.add(left, BorderLayout.WEST);
 
         // Right: Period Selector & Quick Export Buttons
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         right.setOpaque(false);
 
         // Period Buttons
@@ -305,7 +359,7 @@ public class HistoryPanel extends BasePanel {
         btnPdf.addActionListener(e -> onExportPdfStatement());
         right.add(btnPdf);
 
-        JButton btnTax = createVectorActionBtn("Tax P&L Report", Theme.ACCENT, Theme.ACCENT, Color.WHITE, 4);
+        JButton btnTax = createVectorActionBtn("Tax Report", Theme.ACCENT, Theme.ACCENT, Color.WHITE, 4);
         btnTax.addActionListener(e -> onShowTaxReport());
         right.add(btnTax);
 
@@ -334,12 +388,12 @@ public class HistoryPanel extends BasePanel {
     // =========================================================================
 
     private JPanel buildAnalyticsRow() {
-        JPanel row = new JPanel(new GridLayout(1, 3, 12, 0));
-        row.setOpaque(false);
-        row.add(histogramCard);
-        row.add(growthCard);
-        row.add(donutCard);
-        return row;
+        analyticsRow.setOpaque(false);
+        analyticsRow.removeAll();
+        analyticsRow.add(histogramCard);
+        analyticsRow.add(growthCard);
+        analyticsRow.add(donutCard);
+        return analyticsRow;
     }
 
     // =========================================================================
@@ -506,39 +560,40 @@ public class HistoryPanel extends BasePanel {
         historyTable.getTableHeader().setFont(Theme.MONO_SMALL);
         historyTable.getTableHeader().setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER_CUSTOM));
         historyTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        historyTable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
 
-        // Custom Column Renderers
-        historyTable.getColumnModel().getColumn(0).setPreferredWidth(100);
+        // Custom Column Renderers (Proportional weights to fit 1-page layout without horizontal scroll)
+        historyTable.getColumnModel().getColumn(0).setPreferredWidth(95);
         historyTable.getColumnModel().getColumn(0).setCellRenderer(new DateTimeCellRenderer());
 
-        historyTable.getColumnModel().getColumn(1).setPreferredWidth(70);
+        historyTable.getColumnModel().getColumn(1).setPreferredWidth(65);
         historyTable.getColumnModel().getColumn(1).setCellRenderer(new OrderIdCellRenderer());
 
-        historyTable.getColumnModel().getColumn(2).setPreferredWidth(140);
+        historyTable.getColumnModel().getColumn(2).setPreferredWidth(115);
         historyTable.getColumnModel().getColumn(2).setCellRenderer(new AssetSymbolCellRenderer());
 
-        historyTable.getColumnModel().getColumn(3).setPreferredWidth(50);
+        historyTable.getColumnModel().getColumn(3).setPreferredWidth(45);
         historyTable.getColumnModel().getColumn(3).setCellRenderer(new SideCellRenderer());
 
-        historyTable.getColumnModel().getColumn(4).setPreferredWidth(80);
+        historyTable.getColumnModel().getColumn(4).setPreferredWidth(65);
         historyTable.getColumnModel().getColumn(4).setCellRenderer(new DefaultAlignRenderer(SwingConstants.LEFT, Theme.TXT_SECONDARY));
 
-        historyTable.getColumnModel().getColumn(5).setPreferredWidth(60);
+        historyTable.getColumnModel().getColumn(5).setPreferredWidth(45);
         historyTable.getColumnModel().getColumn(5).setCellRenderer(new DefaultAlignRenderer(SwingConstants.RIGHT, Theme.TXT_PRIMARY));
 
-        historyTable.getColumnModel().getColumn(6).setPreferredWidth(80);
+        historyTable.getColumnModel().getColumn(6).setPreferredWidth(65);
         historyTable.getColumnModel().getColumn(6).setCellRenderer(new PriceCellRenderer());
 
-        historyTable.getColumnModel().getColumn(7).setPreferredWidth(90);
+        historyTable.getColumnModel().getColumn(7).setPreferredWidth(75);
         historyTable.getColumnModel().getColumn(7).setCellRenderer(new GrossValueCellRenderer());
 
-        historyTable.getColumnModel().getColumn(8).setPreferredWidth(90);
+        historyTable.getColumnModel().getColumn(8).setPreferredWidth(75);
         historyTable.getColumnModel().getColumn(8).setCellRenderer(new RealizedPnlCellRenderer());
 
-        historyTable.getColumnModel().getColumn(9).setPreferredWidth(70);
+        historyTable.getColumnModel().getColumn(9).setPreferredWidth(65);
         historyTable.getColumnModel().getColumn(9).setCellRenderer(new StatusCellRenderer());
 
-        historyTable.getColumnModel().getColumn(10).setPreferredWidth(80);
+        historyTable.getColumnModel().getColumn(10).setPreferredWidth(65);
         historyTable.getColumnModel().getColumn(10).setCellRenderer(new ActionsCellRenderer());
         historyTable.getColumnModel().getColumn(10).setCellEditor(new ActionsCellEditor());
 
@@ -556,7 +611,8 @@ public class HistoryPanel extends BasePanel {
         JScrollPane tableScroll = new JScrollPane(historyTable);
         tableScroll.setBorder(BorderFactory.createEmptyBorder());
         tableScroll.getViewport().setBackground(Theme.CARD_BG);
-        tableScroll.setPreferredSize(new Dimension(750, 320));
+        tableScroll.setPreferredSize(new Dimension(650, 320));
+        tableScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
         tableContainer.add(tableScroll, BorderLayout.CENTER);
 
         // Pagination Footer
@@ -606,7 +662,8 @@ public class HistoryPanel extends BasePanel {
         row.add(tableContainer, BorderLayout.CENTER);
 
         // Right 4 Cols: Inspector Panel
-        inspectorPanel.setPreferredSize(new Dimension(380, 420));
+        inspectorPanel.setPreferredSize(new Dimension(310, 420));
+        inspectorPanel.setMinimumSize(new Dimension(280, 420));
         row.add(inspectorPanel, BorderLayout.EAST);
 
         return row;
@@ -1827,15 +1884,26 @@ public class HistoryPanel extends BasePanel {
     // =========================================================================
 
     private static JPanel cardHeader(String title, JLabel sub) {
-        JPanel top = new JPanel(new BorderLayout());
+        return cardHeader(title, sub, null);
+    }
+
+    private static JPanel cardHeader(String title, JLabel sub, JButton btnMaximize) {
+        JPanel top = new JPanel(new BorderLayout(4, 2));
         top.setOpaque(false);
+        JPanel textCol = new JPanel();
+        textCol.setLayout(new BoxLayout(textCol, BoxLayout.Y_AXIS));
+        textCol.setOpaque(false);
         JLabel t = new JLabel(title);
         t.setFont(new Font("Inter", Font.BOLD, 13));
         t.setForeground(Theme.TXT_PRIMARY);
         sub.setFont(Theme.MICRO);
         sub.setForeground(Theme.TXT_MUTED);
-        top.add(t, BorderLayout.NORTH);
-        top.add(sub, BorderLayout.SOUTH);
+        textCol.add(t);
+        textCol.add(sub);
+        top.add(textCol, BorderLayout.CENTER);
+        if (btnMaximize != null) {
+            top.add(btnMaximize, BorderLayout.EAST);
+        }
         return top;
     }
 
@@ -1860,11 +1928,27 @@ public class HistoryPanel extends BasePanel {
         private final JLabel maxWin = new JLabel("Best Trade: -");
         private final JLabel maxLoss = new JLabel("Worst Trade: -");
         private List<Double> bars = List.of();
+        private JButton btnMaximize;
+        private boolean isMaximized = false;
+        private Consumer<Boolean> onToggleMaximize;
 
         public DailyHistogramCard() {
             setLayout(new BorderLayout(0, 8));
             styleAnalyticsCard(this);
-            add(cardHeader("Daily Realized P&L", sub), BorderLayout.NORTH);
+            btnMaximize = new JButton("⛶");
+            btnMaximize.setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 10f));
+            btnMaximize.setForeground(Theme.TXT_MUTED);
+            btnMaximize.setBackground(Theme.SIDEBAR_BG);
+            btnMaximize.setFocusPainted(false);
+            btnMaximize.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(Theme.BORDER_CUSTOM, 1),
+                    BorderFactory.createEmptyBorder(2, 6, 2, 6)
+            ));
+            btnMaximize.setCursor(new Cursor(Cursor.HAND_CURSOR));
+            btnMaximize.setToolTipText("Maximize Chart");
+            btnMaximize.addActionListener(e -> toggleMaximize());
+
+            add(cardHeader("Daily Realized P&L", sub, btnMaximize), BorderLayout.NORTH);
 
             JPanel canvas = new JPanel() {
                 @Override
@@ -1919,6 +2003,29 @@ public class HistoryPanel extends BasePanel {
             add(ftr, BorderLayout.SOUTH);
         }
 
+        public void setOnToggleMaximize(Consumer<Boolean> listener) {
+            this.onToggleMaximize = listener;
+        }
+
+        public void toggleMaximize() {
+            setMaximized(!isMaximized);
+        }
+
+        public void setMaximized(boolean max) {
+            this.isMaximized = max;
+            if (btnMaximize != null) {
+                btnMaximize.setText(max ? "🗗" : "⛶");
+                btnMaximize.setToolTipText(max ? "Restore Normal View" : "Maximize Chart");
+            }
+            if (onToggleMaximize != null) {
+                onToggleMaximize.accept(max);
+            }
+        }
+
+        public boolean isMaximized() {
+            return isMaximized;
+        }
+
         public void updateData(TradeStats st) {
             List<Double> days = new ArrayList<>(st.dailyPnl.values());
             bars = days.subList(Math.max(0, days.size() - 14), days.size());
@@ -1934,11 +2041,27 @@ public class HistoryPanel extends BasePanel {
         private final JLabel sub = new JLabel("Running total of realized P&L");
         private final JLabel leg1 = new JLabel("● Realized P&L: +₹0");
         private List<Double> curve = List.of();
+        private JButton btnMaximize;
+        private boolean isMaximized = false;
+        private Consumer<Boolean> onToggleMaximize;
 
         public CumulativeGrowthCard() {
             setLayout(new BorderLayout(0, 8));
             styleAnalyticsCard(this);
-            add(cardHeader("Cumulative Growth Curve", sub), BorderLayout.NORTH);
+            btnMaximize = new JButton("⛶");
+            btnMaximize.setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 10f));
+            btnMaximize.setForeground(Theme.TXT_MUTED);
+            btnMaximize.setBackground(Theme.SIDEBAR_BG);
+            btnMaximize.setFocusPainted(false);
+            btnMaximize.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(Theme.BORDER_CUSTOM, 1),
+                    BorderFactory.createEmptyBorder(2, 6, 2, 6)
+            ));
+            btnMaximize.setCursor(new Cursor(Cursor.HAND_CURSOR));
+            btnMaximize.setToolTipText("Maximize Chart");
+            btnMaximize.addActionListener(e -> toggleMaximize());
+
+            add(cardHeader("Cumulative Growth Curve", sub, btnMaximize), BorderLayout.NORTH);
 
             JPanel canvas = new JPanel() {
                 @Override
@@ -2001,6 +2124,29 @@ public class HistoryPanel extends BasePanel {
             ftr.add(leg1, BorderLayout.WEST);
             ftr.add(leg2, BorderLayout.EAST);
             add(ftr, BorderLayout.SOUTH);
+        }
+
+        public void setOnToggleMaximize(Consumer<Boolean> listener) {
+            this.onToggleMaximize = listener;
+        }
+
+        public void toggleMaximize() {
+            setMaximized(!isMaximized);
+        }
+
+        public void setMaximized(boolean max) {
+            this.isMaximized = max;
+            if (btnMaximize != null) {
+                btnMaximize.setText(max ? "🗗" : "⛶");
+                btnMaximize.setToolTipText(max ? "Restore Normal View" : "Maximize Chart");
+            }
+            if (onToggleMaximize != null) {
+                onToggleMaximize.accept(max);
+            }
+        }
+
+        public boolean isMaximized() {
+            return isMaximized;
         }
 
         public void updateData(TradeStats st) {
