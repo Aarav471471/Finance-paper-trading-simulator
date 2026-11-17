@@ -167,6 +167,9 @@ docs/
 ├── SRS.md                   Software Requirements Specification (FODA)
 ├── SpiralModel.md           SDLC: 4 spiral loops
 ├── OOP-SOLID-Mapping.md     viva cheat sheet: every concept → file
+├── DFD.md                   Data Flow Diagrams (Level 0, 1, 2)
+├── StructureChart.md        Structure chart (module hierarchy, data couples, control flags)
+├── diagrams/                DFD + structure chart: Mermaid sources and rendered .png / .svg
 ├── uml/                     class, use-case, sequence, component diagrams (+ FODA feature model)
 │                            .puml sources and rendered .png
 └── screenshots/
@@ -176,6 +179,7 @@ docs/
 - [SRS (FODA method)](docs/SRS.md)
 - [Spiral model phases](docs/SpiralModel.md)
 - [OOP / SOLID / cohesion-coupling mapping (viva cheat sheet)](docs/OOP-SOLID-Mapping.md)
+- [Data Flow Diagrams (Level 0, 1, 2)](docs/DFD.md) · [Structure chart](docs/StructureChart.md) (PNG/SVG in [docs/diagrams](docs/diagrams/))
 - UML: [Class](docs/uml/class-diagram.png) · [Use case](docs/uml/use-case-diagram.png) · [Sequence](docs/uml/sequence-diagram.png) · [Component](docs/uml/component-diagram.png) · [FODA feature model](docs/uml/feature-model.png)
 
 To re-render a diagram after editing its `.puml` file, use the PlantUML plugin in IntelliJ / VS Code,
