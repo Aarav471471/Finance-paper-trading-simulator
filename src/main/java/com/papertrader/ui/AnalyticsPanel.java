@@ -53,6 +53,8 @@ public class AnalyticsPanel extends BasePanel {
             cards.add(card);
         }
         equityChart.setBorder(Theme.cardBorder());
+        // Net worth is recorded every 15 seconds; a line needs at least two points.
+        equityChart.setEmptyMessage("Recording your account value... the curve appears after a few snapshots (about 15 s each).");
 
         JPanel normalContent = new JPanel(new BorderLayout(0, 14));
         normalContent.setOpaque(false);
