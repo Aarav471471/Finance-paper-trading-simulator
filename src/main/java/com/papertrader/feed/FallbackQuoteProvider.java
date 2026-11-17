@@ -73,6 +73,11 @@ public class FallbackQuoteProvider implements QuoteProvider {
     }
 
     @Override
+    public int maxSymbolsPerRefresh() {
+        return main.maxSymbolsPerRefresh();
+    }
+
+    @Override
     public String getStatusNote() {
         return note;
     }

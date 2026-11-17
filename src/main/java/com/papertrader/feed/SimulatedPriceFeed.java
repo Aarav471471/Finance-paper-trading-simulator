@@ -61,6 +61,14 @@ public class SimulatedPriceFeed implements PriceFeed {
         return "Simulated prices (offline mode)";
     }
 
+    /** Call on the Swing thread. */
+    @Override
+    public void track(Asset asset) {
+        if (!assets.contains(asset)) {
+            assets.add(asset);
+        }
+    }
+
     /** True if this feed has at least one asset to move. */
     public boolean hasAssets() {
         return !assets.isEmpty();

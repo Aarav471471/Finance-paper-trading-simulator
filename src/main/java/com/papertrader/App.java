@@ -9,6 +9,7 @@ import com.papertrader.interfaces.HistoryProvider;
 import com.papertrader.repository.FileEquityRepository;
 import com.papertrader.service.AnalyticsService;
 import com.papertrader.service.AppContext;
+import com.papertrader.service.StockLookupService;
 import com.papertrader.service.ChartService;
 import com.papertrader.service.LeaderboardService;
 import com.papertrader.exception.SimulatorException;
@@ -69,6 +70,7 @@ public class App {
         try {
             StartupScreen.show("Downloading live prices...");          // so a slow download doesn't look like nothing happened
             List<Asset> assets = AssetCatalog.defaultAssets();
+            assets.addAll(StockLookupService.loadSaved(config.dataDirectory()));   // shares looked up in earlier runs
             PriceFeed priceFeed = createPriceFeed(config, assets);      // may take a few seconds (internet)
             SwingUtilities.invokeLater(() -> {                          // Swing must be used from its own UI thread
                 start(assets, priceFeed);
@@ -164,7 +166,10 @@ public class App {
 
         // 5. Show the window and start the market
         AppContext context = new AppContext(authService, marketService, tradingService, portfolioService,
-                chartService, marketDataService, analyticsService, leaderboardService, botService, fees, priceFeed, STARTING_CASH);
+                chartService, marketDataService, analyticsService, leaderboardService, botService, fees, priceFeed,
+                new StockLookupService(marketService, priceFeed,
+                        priceFeed instanceof LivePriceFeed ? new YahooQuoteProvider() : null, dataDir),
+                STARTING_CASH);
         MainFrame frame = new MainFrame(context);
         frame.setVisible(true);
         botService.start();

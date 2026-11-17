@@ -1133,11 +1133,7 @@ public class PortfolioPanel extends BasePanel {
     // =========================================================================
 
     private static boolean isIndianAsset(String sym) {
-        if (sym == null) return false;
-        String s = sym.toUpperCase();
-        return s.equals("RELIANCE") || s.equals("TCS") || s.equals("INFY") || s.equals("HDFCBANK")
-                || s.equals("ICICIBANK") || s.equals("BHARTIARTL") || s.equals("SBIN") || s.equals("ITC")
-                || s.equals("LT") || s.equals("TATAMOTORS") || s.equals("TRENT") || s.equals("ETERNAL");
+        return com.papertrader.feed.YahooSymbols.isIndian(sym);
     }
 
     private static boolean isCryptoAsset(String sym) {

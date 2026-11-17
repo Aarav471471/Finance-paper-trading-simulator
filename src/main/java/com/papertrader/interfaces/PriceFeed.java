@@ -14,6 +14,17 @@ public interface PriceFeed {
 
     void stop();
 
+    /** Starts pricing an asset that was added after start (a share the user looked up). */
+    default void track(com.papertrader.model.Asset asset) {
+    }
+
+    /**
+     * Symbols to keep the freshest (the share on screen, the user's holdings). Feeds that can
+     * only refresh some assets at a time refresh these every time. Ignored by default.
+     */
+    default void setPrioritySymbols(java.util.Collection<String> symbols) {
+    }
+
     /** One line for the UI saying where prices come from, e.g. "Binance: live 16:30:05". */
     String getStatusText();
 }

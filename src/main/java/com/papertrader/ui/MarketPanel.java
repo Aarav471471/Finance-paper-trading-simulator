@@ -11,6 +11,8 @@ import com.papertrader.model.Crypto;
 import com.papertrader.model.ETF;
 import com.papertrader.model.Stock;
 import com.papertrader.service.MarketService;
+import com.papertrader.service.StockLookupService;
+import com.papertrader.model.IndianStocks;
 import com.papertrader.util.Formatter;
 
 import javax.swing.BorderFactory;
@@ -148,6 +150,9 @@ public class MarketPanel extends BasePanel {
     private final JPanel gainersContainer = new JPanel();
     private final JPanel losersContainer = new JPanel();
     private final JTextField searchField = new JTextField();
+    /** Shown when the typed symbol is not in the list: looks it up on NSE (see StockLookupService). */
+    private final JButton lookupBtn = new JButton();
+    private StockLookupService lookup;
     private final JComboBox<String> sectorCombo = new JComboBox<>();
     private final JButton capAllBtn = new JButton("All Cap");
     private final JButton capLargeBtn = new JButton("Large Cap");
@@ -294,9 +299,11 @@ public class MarketPanel extends BasePanel {
             @Override
             public void keyReleased(KeyEvent e) {
                 searchField.setText(globalSearch.getText());
+                searchQuery = globalSearch.getText();
                 filterTable();
             }
         });
+        globalSearch.addActionListener(e -> searchField.postActionEvent());   // Enter: look up on NSE if missing
         searchBox.add(globalSearch, BorderLayout.CENTER);
 
         JLabel cmdK = new JLabel("⌘K ");
@@ -424,12 +431,14 @@ public class MarketPanel extends BasePanel {
 
     private void switchRegion(Region r) {
         this.currentRegion = r;
+        refreshTick = 0;   // rebuild the sector strip for the new region right away
         showToast("Switched to " + r.name() + " Markets");
         refreshRegionUI();
         refresh();
     }
 
     private void refreshRegionUI() {
+        rebuildSectorCombo();
         // 1. Style Region Buttons
         Component[] comps = regionButtonsContainer.getComponents();
         Region[] regions = Region.values();
@@ -705,6 +714,14 @@ public class MarketPanel extends BasePanel {
     private String[][] sectorHeat() {
         Map<String, double[]> sums = new LinkedHashMap<>();   // sector -> {total %, count}
         for (Asset a : marketService.getAllAssets()) {
+            boolean inRegion = switch (currentRegion) {
+                case INDIA -> isIndianAsset(a.getSymbol());
+                case USA -> !isIndianAsset(a.getSymbol()) && !(a instanceof Crypto);
+                case CRYPTO -> a instanceof Crypto;
+            };
+            if (!inRegion) {
+                continue;
+            }
             double[] v = sums.computeIfAbsent(getAssetSector(a), k -> new double[2]);
             v[0] += a.getChangePercent();
             v[1]++;
@@ -876,7 +893,7 @@ public class MarketPanel extends BasePanel {
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         right.setOpaque(false);
 
-        JLabel price = new JLabel(Formatter.money(a.getPrice()));
+        JLabel price = new JLabel(MarketFormat.price(MarketFormat.currency(a.getSymbol()), a.getPrice()));
         price.setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 10f));
         price.setForeground(Color.WHITE);
 
@@ -929,6 +946,7 @@ public class MarketPanel extends BasePanel {
         searchField.setFont(Theme.SMALL);
         searchField.setForeground(Color.WHITE);
         searchField.setCaretColor(Color.WHITE);
+        searchField.putClientProperty("JTextField.placeholderText", "Name or symbol; any NSE symbol + Enter");
         searchField.addKeyListener(new KeyAdapter() {
             @Override
             public void keyReleased(KeyEvent e) {
@@ -936,9 +954,27 @@ public class MarketPanel extends BasePanel {
                 filterTable();
             }
         });
+        // Enter on a symbol that is not in the list looks it up on NSE
+        searchField.addActionListener(e -> {
+            if (lookupBtn.isVisible() && lookupBtn.isEnabled()) {
+                lookUpTypedSymbol();
+            }
+        });
         left.add(searchField, BorderLayout.CENTER);
 
-        bar.add(left);
+        lookupBtn.setFont(Theme.SMALL.deriveFont(Font.BOLD));
+        lookupBtn.setBackground(Theme.ACCENT);
+        lookupBtn.setForeground(Color.WHITE);
+        lookupBtn.setFocusPainted(false);
+        lookupBtn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        lookupBtn.setVisible(false);
+        lookupBtn.addActionListener(e -> lookUpTypedSymbol());
+
+        JPanel searchGroup = new JPanel(new BorderLayout(6, 0));
+        searchGroup.setOpaque(false);
+        searchGroup.add(left, BorderLayout.CENTER);
+        searchGroup.add(lookupBtn, BorderLayout.EAST);
+        bar.add(searchGroup);
 
         // Right: Filters & Sort
         JPanel right = new JPanel(new WrapLayout(FlowLayout.RIGHT, 6, 0));
@@ -948,19 +984,11 @@ public class MarketPanel extends BasePanel {
         sectorCombo.setFont(Theme.SMALL);
         sectorCombo.setBackground(Theme.SURFACE_SUB);
         sectorCombo.setForeground(Color.WHITE);
-        sectorCombo.addItem("All Sectors");
-        sectorCombo.addItem("Information Tech");
-        sectorCombo.addItem("Banking");
-        sectorCombo.addItem("Energy");
-        sectorCombo.addItem("Automobile");
-        sectorCombo.addItem("Telecom");
-        sectorCombo.addItem("FMCG");
-        sectorCombo.addItem("Infrastructure");
-        sectorCombo.addItem("Consumer Tech");
-        sectorCombo.addItem("Technology");
-        sectorCombo.addItem("Crypto");
-        sectorCombo.addItem("ETF");
+        rebuildSectorCombo();
         sectorCombo.addActionListener(e -> {
+            if (rebuildingSectors) {
+                return;
+            }
             String sel = (String) sectorCombo.getSelectedItem();
             activeSector = "All Sectors".equals(sel) ? "ALL" : sel;
             filterTable();
@@ -1010,6 +1038,36 @@ public class MarketPanel extends BasePanel {
 
         bar.add(right);
         return bar;
+    }
+
+    private boolean rebuildingSectors;
+
+    /** The sector choices of the current region, from the assets themselves (so new shares fit in). */
+    private void rebuildSectorCombo() {
+        java.util.TreeSet<String> sectors = new java.util.TreeSet<>();
+        for (Asset a : marketService.getAllAssets()) {
+            boolean inRegion = switch (currentRegion) {
+                case INDIA -> isIndianAsset(a.getSymbol());
+                case USA -> !isIndianAsset(a.getSymbol()) && !(a instanceof Crypto);
+                case CRYPTO -> a instanceof Crypto;
+            };
+            if (inRegion) {
+                sectors.add(getAssetSector(a));
+            }
+        }
+        rebuildingSectors = true;
+        sectorCombo.removeAllItems();
+        sectorCombo.addItem("All Sectors");
+        for (String sector : sectors) {
+            sectorCombo.addItem(sector);
+        }
+        if (!"ALL".equals(activeSector) && sectors.contains(activeSector)) {
+            sectorCombo.setSelectedItem(activeSector);
+        } else {
+            activeSector = "ALL";
+            sectorCombo.setSelectedIndex(0);
+        }
+        rebuildingSectors = false;
     }
 
     private void setCapFilter(String cap) {
@@ -1179,7 +1237,7 @@ public class MarketPanel extends BasePanel {
             if (marketData == null) {
                 break;
             }
-            MarketSnapshot snap = marketData.snapshot(a);
+            MarketSnapshot snap = marketData.listSnapshot(a);
             double turnover = snap.volume() * a.getPrice();
             if (MarketFormat.known(turnover) && turnover > bestTurnover) {
                 bestTurnover = turnover;
@@ -1205,21 +1263,21 @@ public class MarketPanel extends BasePanel {
         } else {
             String c = MarketFormat.currency(mostActive.getSymbol());
             activityStrip.add(createActivityCard("MOST ACTIVELY TRADED", mostActive.getSymbol(),
-                    MarketFormat.volume(marketData.snapshot(mostActive).volume()), MarketFormat.big(c, bestTurnover) + " turnover today", Theme.ACCENT));
+                    MarketFormat.volume(marketData.listSnapshot(mostActive).volume()), MarketFormat.big(c, bestTurnover) + " turnover today", Theme.ACCENT));
         }
         if (surge == null) {
             activityStrip.add(createActivityCard("VOLUME SURGE", "-", MarketFormat.NA, "Needs daily volume history", Theme.GAIN));
         } else {
             activityStrip.add(createActivityCard(String.format(Locale.US, "VOLUME SURGE (%.1fX)", bestSurge), surge.getSymbol(),
                     MarketFormat.signedPct(surge.getChangePercent()),
-                    MarketFormat.volume(marketData.snapshot(surge).volume()) + " vs " + MarketFormat.volume(marketData.averageVolume(surge, 10)) + " 10-day avg", Theme.GAIN));
+                    MarketFormat.volume(marketData.listSnapshot(surge).volume()) + " vs " + MarketFormat.volume(marketData.averageVolume(surge, 10)) + " 10-day avg", Theme.GAIN));
         }
         if (nearHigh == null) {
             activityStrip.add(createActivityCard("CLOSEST TO 52-WEEK HIGH", "-", MarketFormat.NA, "Loading 52-week ranges...", Theme.WARNING));
         } else {
             String c = MarketFormat.currency(nearHigh.getSymbol());
             activityStrip.add(createActivityCard("CLOSEST TO 52-WEEK HIGH", nearHigh.getSymbol(), MarketFormat.price(c, nearHigh.getPrice()),
-                    String.format(Locale.US, "%.1f%% of 52W high %s", bestHigh * 100, MarketFormat.price(c, marketData.snapshot(nearHigh).week52High())), Theme.WARNING));
+                    String.format(Locale.US, "%.1f%% of 52W high %s", bestHigh * 100, MarketFormat.price(c, marketData.listSnapshot(nearHigh).week52High())), Theme.WARNING));
         }
         if (widest == null) {
             activityStrip.add(createActivityCard("WIDEST DAY RANGE", "-", MarketFormat.NA, "Loading day ranges...", Theme.ACCENT));
@@ -1350,7 +1408,7 @@ public class MarketPanel extends BasePanel {
         JPanel dPriceBox = new JPanel(new BorderLayout());
         dPriceBox.setOpaque(false);
 
-        JLabel dPrice = new JLabel(Formatter.money(a.getPrice()));
+        JLabel dPrice = new JLabel(MarketFormat.price(MarketFormat.currency(a.getSymbol()), a.getPrice()));
         dPrice.setFont(Theme.MONO_BODY.deriveFont(Font.BOLD, 18f));
         dPrice.setForeground(Color.WHITE);
 
@@ -1580,6 +1638,54 @@ public class MarketPanel extends BasePanel {
         }
     }
 
+    /** Lets the search box find NSE shares that are not in the built-in list. */
+    public void setStockLookup(StockLookupService lookup) {
+        this.lookup = lookup;
+    }
+
+    /** Offers "Find X on NSE" when nothing in the list matches and the typed text could be an NSE symbol that the list does not have. */
+    private void updateLookupButton(boolean nothingMatches) {
+        String symbol = IndianStocks.normalize(searchQuery);
+        boolean show = lookup != null && nothingMatches && symbol != null && symbol.length() >= 2 && currentRegion != Region.CRYPTO
+                && marketService.findBySymbol(symbol).isEmpty();
+        if (show && lookupBtn.isEnabled()) {
+            lookupBtn.setText("Find " + symbol + " on NSE");
+        }
+        if (lookupBtn.isVisible() != show && lookupBtn.isEnabled()) {
+            lookupBtn.setVisible(show);
+            lookupBtn.revalidate();
+        }
+    }
+
+    private void lookUpTypedSymbol() {
+        if (lookup == null) {
+            return;
+        }
+        String typed = searchQuery;
+        lookupBtn.setEnabled(false);
+        lookupBtn.setText("Searching NSE...");
+        lookup.lookUpIndian(typed, result -> {
+            lookupBtn.setEnabled(true);
+            if (!result.found()) {
+                showToast(result.message());
+                filterTable();
+                return;
+            }
+            Asset a = result.asset();
+            showToast("Added " + a.getSymbol() + " (" + a.getName() + ") with live NSE prices");
+            if (currentRegion != Region.INDIA) {
+                currentRegion = Region.INDIA;
+                refreshRegionUI();
+            } else {
+                rebuildSectorCombo();
+            }
+            searchField.setText(a.getSymbol());
+            searchQuery = a.getSymbol();
+            lookupBtn.setVisible(false);
+            refresh();
+        });
+    }
+
     /** Gives the page real index levels, volumes, market caps and news. */
     public void setMarketData(MarketDataService marketData) {
         this.marketData = marketData;
@@ -1605,7 +1711,7 @@ public class MarketPanel extends BasePanel {
             else if (a.getChangePercent() < -0.001) down++;
             else flat++;
             if (marketData != null) {
-                double v = marketData.snapshot(a).volume();
+                double v = marketData.listSnapshot(a).volume();
                 if (MarketFormat.known(v)) {
                     turnover += v * a.getPrice();
                 }
@@ -1645,9 +1751,18 @@ public class MarketPanel extends BasePanel {
             rebuildActivityStrip();
         }
 
-        // Update Movers Dock
-        List<Asset> all = marketService.getAllAssets();
-        List<Asset> sorted = new ArrayList<>(all);
+        // Update Movers Dock (shares of the region on screen)
+        List<Asset> sorted = new ArrayList<>();
+        for (Asset a : marketService.getAllAssets()) {
+            boolean inRegion = switch (currentRegion) {
+                case INDIA -> isIndianAsset(a.getSymbol());
+                case USA -> !isIndianAsset(a.getSymbol()) && !(a instanceof Crypto);
+                case CRYPTO -> a instanceof Crypto;
+            };
+            if (inRegion) {
+                sorted.add(a);
+            }
+        }
         sorted.sort(Comparator.comparingDouble(Asset::getChangePercent));
 
         // Gainers (highest changes)
@@ -1715,13 +1830,12 @@ public class MarketPanel extends BasePanel {
         }
 
         tableModel.setAssets(filtered);
+        updateLookupButton(filtered.isEmpty());
         paginationLabel.setText("Showing 1-" + filtered.size() + " of " + filtered.size() + " listed instruments (" + currentRegion.name() + ")");
     }
 
     private boolean isIndianAsset(String s) {
-        return s.equals("RELIANCE") || s.equals("TCS") || s.equals("HDFCBANK") || s.equals("INFY")
-                || s.equals("ICICIBANK") || s.equals("BHARTIARTL") || s.equals("SBIN") || s.equals("ITC")
-                || s.equals("LT") || s.equals("TATAMOTORS") || s.equals("TRENT") || s.equals("ETERNAL");
+        return com.papertrader.feed.YahooSymbols.isIndian(s);
     }
 
     private String getAssetSector(Asset a) {
@@ -1775,12 +1889,12 @@ public class MarketPanel extends BasePanel {
             return switch (column) {
                 case 0 -> a;
                 case 1 -> isIndianAsset(a.getSymbol()) ? "NSE" : (a instanceof Crypto ? "BINANCE" : "NASDAQ");
-                case 2 -> Formatter.money(a.getPrice());
+                case 2 -> MarketFormat.price(MarketFormat.currency(a.getSymbol()), a.getPrice());
                 case 3 -> a.getPrice() - a.getPreviousClose();
                 case 4 -> a.getChangePercent();
                 case 5 -> a;
-                case 6 -> marketData == null ? MarketFormat.NA : MarketFormat.volume(marketData.snapshot(a).volume());
-                case 7 -> marketData == null ? MarketFormat.NA : marketData.fundamentals(a)
+                case 6 -> marketData == null ? MarketFormat.NA : MarketFormat.volume(marketData.listSnapshot(a).volume());
+                case 7 -> marketData == null ? MarketFormat.NA : marketData.listFundamentals(a)
                         .map(f -> MarketFormat.big(MarketFormat.currency(a.getSymbol()), f.marketCap())).orElse(MarketFormat.NA);
                 case 8 -> a;
                 case 9 -> a;
@@ -1872,7 +1986,9 @@ public class MarketPanel extends BasePanel {
             JLabel l = (JLabel) super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, col);
             if (value instanceof Double pts) {
                 boolean up = pts >= 0;
-                l.setText((up ? "+" : "") + Formatter.money(pts));
+                String cur = t.getModel() instanceof MarketDirectoryTableModel m && row < m.getRowCount()
+                        ? MarketFormat.currency(m.getAssetAt(t.convertRowIndexToModel(row)).getSymbol()) : "$";
+                l.setText((up ? "+" : "-") + cur + Formatter.money(Math.abs(pts)).replace("$", ""));
                 l.setForeground(up ? Theme.GAIN : Theme.LOSS);
             }
             l.setHorizontalAlignment(SwingConstants.RIGHT);
@@ -1914,7 +2030,8 @@ public class MarketPanel extends BasePanel {
             if (!(value instanceof Asset a)) return super.getTableCellRendererComponent(t, value, isSelected, hasFocus, row, col);
 
             double p = a.getPrice();
-            MarketSnapshot snap = marketDataRef != null ? marketDataRef.snapshot(a) : null;
+            MarketSnapshot snap = marketDataRef != null ? marketDataRef.listSnapshot(a) : null;
+            String cur = MarketFormat.currency(a.getSymbol());
             double low = snap != null && MarketFormat.known(snap.dayLow()) ? snap.dayLow() : Math.min(p, a.getPreviousClose());
             double high = snap != null && MarketFormat.known(snap.dayHigh()) ? snap.dayHigh() : Math.max(p, a.getPreviousClose());
             boolean isUp = a.getChangePercent() >= 0;
@@ -1932,8 +2049,8 @@ public class MarketPanel extends BasePanel {
                     // Numbers
                     g2.setFont(Theme.MICRO.deriveFont(7.5f));
                     g2.setColor(Theme.TXT_MUTED);
-                    g2.drawString(Formatter.money(low), 4, 12);
-                    String hStr = Formatter.money(high);
+                    g2.drawString(MarketFormat.price(cur, low), 4, 12);
+                    String hStr = MarketFormat.price(cur, high);
                     FontMetrics fm = g2.getFontMetrics();
                     g2.drawString(hStr, w - fm.stringWidth(hStr) - 4, 12);
 
