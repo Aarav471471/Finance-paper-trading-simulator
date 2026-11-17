@@ -1,5 +1,7 @@
 package com.papertrader.ui;
 
+import com.papertrader.ui.components.LeadingTrailingLayout;
+import com.papertrader.ui.components.WrapLayout;
 import com.papertrader.model.MarketSnapshot;
 import com.papertrader.service.MarketDataService;
 import com.papertrader.util.MarketFormat;
@@ -242,12 +244,9 @@ public class TradePanel extends BasePanel {
         JPanel bottomSection = buildBottomOrdersSection();
         scrollBody.add(bottomSection);
 
-        JScrollPane scrollPane = new JScrollPane(scrollBody);
-        scrollPane.setBorder(null);
-        scrollPane.setOpaque(false);
-        scrollPane.getViewport().setOpaque(false);
-        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        // Fits the window width (no horizontal bar) and scrolls vertically when needed.
+        JScrollPane scrollPane = new com.papertrader.ui.components.ResponsiveScrollPane(
+                scrollBody, com.papertrader.ui.components.ResponsiveScrollPane.FIT_CONTENT);
 
         mainCardContainer.setOpaque(false);
         maximizedChartContainer.setOpaque(false);
@@ -499,16 +498,16 @@ public class TradePanel extends BasePanel {
     // 3. MARKET SWITCHER & ASSET STRIP
     // -------------------------------------------------------------------------
     private JPanel buildMarketSwitcherStrip() {
-        JPanel strip = new JPanel(new BorderLayout(8, 4));
+        // Left/right row that puts the asset telemetry on its own line when the window is narrow.
+        JPanel strip = LeadingTrailingLayout.newRow(8, 6);
         strip.setOpaque(true);
         strip.setBackground(Theme.CARD_BG);
         strip.setBorder(BorderFactory.createCompoundBorder(
                 new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 6, 1),
                 BorderFactory.createEmptyBorder(6, 10, 6, 10)));
-        strip.setMaximumSize(new Dimension(Short.MAX_VALUE, 50));
 
         // Left: Region Tabs & Quick Asset Shortcuts
-        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        JPanel left = new JPanel(new WrapLayout(FlowLayout.LEFT, 6, 0));
         left.setOpaque(false);
 
         JPanel regionPills = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
@@ -536,10 +535,10 @@ public class TradePanel extends BasePanel {
         refreshQuickAssetButtons();
         left.add(quickAssetsPanel);
 
-        strip.add(left, BorderLayout.WEST);
+        strip.add(left);
 
-        // Right: Active Asset Telemetry
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        // Right: Active Asset Telemetry (wraps onto more lines if it still does not fit)
+        JPanel right = new JPanel(new WrapLayout(FlowLayout.RIGHT, 10, 0));
         right.setOpaque(false);
 
         // Avatar
@@ -601,7 +600,7 @@ public class TradePanel extends BasePanel {
         assetSessionLbl.setBorder(BorderFactory.createEmptyBorder(3, 6, 3, 6));
         right.add(assetSessionLbl);
 
-        strip.add(right, BorderLayout.EAST);
+        strip.add(right);
         return strip;
     }
 
@@ -1660,7 +1659,7 @@ public class TradePanel extends BasePanel {
                     BorderFactory.createEmptyBorder(6, 10, 6, 10)));
 
             // Header
-            JPanel top = new JPanel(new BorderLayout());
+            JPanel top = new JPanel(new LeadingTrailingLayout(8, 2));
             top.setOpaque(false);
             JLabel title = new JLabel("Level 2 Market Depth");
             title.setFont(Theme.HEADING.deriveFont(Font.BOLD, 11f));
@@ -1670,13 +1669,13 @@ public class TradePanel extends BasePanel {
             sub.setFont(Theme.MICRO);
             sub.setForeground(Theme.TXT_MUTED);
 
-            JPanel leftT = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+            JPanel leftT = new JPanel(new WrapLayout(FlowLayout.LEFT, 6, 0));
             leftT.setOpaque(false);
             leftT.add(title);
             leftT.add(sub);
-            top.add(leftT, BorderLayout.WEST);
+            top.add(leftT);
 
-            JPanel rightT = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+            JPanel rightT = new JPanel(new WrapLayout(FlowLayout.RIGHT, 8, 0));
             rightT.setOpaque(false);
             ratioLbl.setFont(Theme.MONO_TINY.deriveFont(Font.BOLD, 8.5f));
             ratioLbl.setForeground(Theme.GAIN);
@@ -1684,7 +1683,7 @@ public class TradePanel extends BasePanel {
             spreadLbl.setForeground(Theme.TXT_MUTED);
             rightT.add(ratioLbl);
             rightT.add(spreadLbl);
-            top.add(rightT, BorderLayout.EAST);
+            top.add(rightT);
 
             // Ratio Bar
             JPanel ratioBar = new JPanel() {

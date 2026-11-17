@@ -252,14 +252,14 @@ public class CandlestickChartPanel extends JPanel {
     }
 
     private JPanel buildToolbar() {
-        JPanel bar = new JPanel(new BorderLayout(8, 0));
+        // Wraps onto extra lines on narrow windows instead of running off the right edge.
+        JPanel bar = new JPanel(new LeadingTrailingLayout(8, 4));
         bar.setOpaque(true);
         bar.setBackground(new Color(0x13, 0x1A, 0x27));
         bar.setBorder(BorderFactory.createEmptyBorder(6, 12, 6, 12));
-        bar.setPreferredSize(new Dimension(100, 36));
 
         // Left: Timeframe pills + Vector Chart style buttons + Indicator badges
-        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        JPanel left = new JPanel(new WrapLayout(FlowLayout.LEFT, 4, 0));
         left.setOpaque(false);
 
         // 1. Timeframe Pills
@@ -338,7 +338,7 @@ public class CandlestickChartPanel extends JPanel {
         indGroup.add(btnRsi);
         left.add(indGroup);
 
-        bar.add(left, BorderLayout.WEST);
+        bar.add(left);
 
         // Right tools (Map-style Zoom Controls: Zoom In, Zoom Out, Zoom %, Reset)
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
@@ -364,7 +364,7 @@ public class CandlestickChartPanel extends JPanel {
         zoomGroup.add(btnMaximize);
 
         right.add(zoomGroup);
-        bar.add(right, BorderLayout.EAST);
+        bar.add(right);
         return bar;
     }
 
@@ -571,11 +571,10 @@ public class CandlestickChartPanel extends JPanel {
     }
 
     private JPanel buildOhlcvBar() {
-        JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 4));
+        JPanel bar = new JPanel(new WrapLayout(FlowLayout.LEFT, 12, 4));
         bar.setOpaque(true);
         bar.setBackground(new Color(0x0C, 0x12, 0x1E));
-        bar.setBorder(BorderFactory.createEmptyBorder(2, 12, 2, 12));
-        bar.setPreferredSize(new Dimension(100, 24));
+        bar.setBorder(BorderFactory.createEmptyBorder(0, 12, 0, 12));
 
         Font f = Theme.MONO_TINY;
         for (JLabel l : List.of(lblOpen, lblHigh, lblLow, lblClose, lblChange, lblVol, lblVwap)) {
