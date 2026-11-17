@@ -47,6 +47,8 @@ public class CandleChartPanel extends JPanel {
     private static final int PAD_BOTTOM = 26;
 
     private String title = "";
+    /** Shown while there is nothing to draw yet. */
+    private String emptyMessage = "Loading price history...";
     private List<Candle> candles = new ArrayList<>();
     private List<TradeMarker> markers = new ArrayList<>();
     private boolean dailyLabels = false;
@@ -234,6 +236,12 @@ public class CandleChartPanel extends JPanel {
         return b;
     }
 
+    /** Text drawn while the chart has no data (default: Loading price history...). */
+    public void setEmptyMessage(String emptyMessage) {
+        this.emptyMessage = emptyMessage;
+        repaint();
+    }
+
     public void setData(String title, List<Candle> candles, boolean dailyLabels) {
         setData(title, candles, new ArrayList<>(), dailyLabels);
     }
@@ -259,7 +267,7 @@ public class CandleChartPanel extends JPanel {
         if (candles.isEmpty()) {
             g2.setColor(Theme.MUTED);
             g2.setFont(Theme.BODY);
-            g2.drawString("Loading price history...", PAD_LEFT, PAD_TOP + 30);
+            g2.drawString(emptyMessage, PAD_LEFT, PAD_TOP + 30);
             return;
         }
 

@@ -80,6 +80,9 @@ public class BacktestPanel extends BasePanel {
         }
         chart.setBorder(Theme.cardBorder());
         equityChart.setBorder(Theme.cardBorder());
+        // Before Start there is nothing to load yet, so don't say "Loading..." / "Collecting live prices...".
+        chart.setEmptyMessage("No replay yet.");
+        equityChart.setEmptyMessage("The strategy's equity curve appears here once the replay starts.");
         JSplitPane charts = new JSplitPane(JSplitPane.VERTICAL_SPLIT, chart, equityChart);
         charts.setResizeWeight(0.65);
         charts.setBorder(null);

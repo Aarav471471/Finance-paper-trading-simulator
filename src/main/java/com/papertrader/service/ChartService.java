@@ -9,8 +9,11 @@ import com.papertrader.model.Timeframe;
 import javax.swing.SwingUtilities;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
@@ -31,11 +34,20 @@ public class ChartService implements PriceListener {
     private final Map<String, String> sourceNames = new HashMap<>();
     /** Everyone waiting for a download that is still running, by key. */
     private final Map<String, List<Consumer<List<Candle>>>> waiting = new HashMap<>();
-    private final ExecutorService loader = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "history-download");
+    /** Keys whose download a page is actively waiting for (it called loadAsync). */
+    private final Set<String> requested = new HashSet<>();
+    /** Keys that finished downloading; read from the download threads to skip stale queued work. */
+    private final Set<String> finished = ConcurrentHashMap.newKeySet();
+    /** Background pre-fetching (getCandles): many requests, one at a time, so we don't flood the APIs. */
+    private final ExecutorService prefetchLoader = Executors.newSingleThreadExecutor(r -> daemon(r, "history-prefetch"));
+    /** Downloads a page is waiting on (charts, Backtest): never queued behind the pre-fetching above. */
+    private final ExecutorService requestLoader = Executors.newFixedThreadPool(2, r -> daemon(r, "history-download"));
+
+    private static Thread daemon(Runnable r, String name) {
+        Thread t = new Thread(r, name);
         t.setDaemon(true);
         return t;
-    });
+    }
 
     /** @param providers tried in order; put SimulatedHistoryProvider last as the fallback */
     public ChartService(List<HistoryProvider> providers) {
@@ -50,7 +62,11 @@ public class ChartService implements PriceListener {
     public List<Candle> getCandles(Asset asset, Timeframe timeframe) {
         List<Candle> cached = cache.get(key(asset, timeframe));
         if (cached == null) {
-            loadAsync(asset, timeframe, candles -> { });
+            String key = key(asset, timeframe);
+            if (!waiting.containsKey(key)) {
+                waiting.put(key, new ArrayList<>());
+                prefetchLoader.submit(() -> download(asset, timeframe, key));
+            }
             return new ArrayList<>();
         }
         return new ArrayList<>(cached);
@@ -68,25 +84,36 @@ public class ChartService implements PriceListener {
             onLoaded.accept(new ArrayList<>(cache.get(key)));
             return;
         }
-        // Already downloading (e.g. a chart on another page asked first): wait for that
-        // download too, instead of dropping this caller, which left Backtest stuck forever.
-        List<Consumer<List<Candle>>> callbacks = waiting.get(key);
-        if (callbacks != null) {
-            callbacks.add(onLoaded);
-            return;
+        // If a download for the same candles is already running (e.g. a chart on another page
+        // asked first), wait for it as well. Dropping this caller left Backtest stuck forever.
+        waiting.computeIfAbsent(key, k -> new ArrayList<>()).add(onLoaded);
+        // A page is waiting, so download now on the request threads instead of waiting behind
+        // the background pre-fetch queue (which can hold dozens of slow downloads).
+        if (requested.add(key)) {
+            requestLoader.submit(() -> download(asset, timeframe, key));
         }
-        callbacks = new ArrayList<>();
-        callbacks.add(onLoaded);
-        waiting.put(key, callbacks);
-        loader.submit(() -> {
-            Result result = loadBlocking(asset, timeframe);
-            SwingUtilities.invokeLater(() -> {
-                cache.put(key, result.candles);
-                sourceNames.put(key, result.source);
-                for (Consumer<List<Candle>> callback : waiting.remove(key)) {
+    }
+
+    /** Runs on a download thread; hands the result to the UI thread. */
+    private void download(Asset asset, Timeframe timeframe, String key) {
+        if (finished.contains(key)) {
+            return;   // already downloaded by the other queue
+        }
+        Result result = loadBlocking(asset, timeframe);
+        SwingUtilities.invokeLater(() -> {
+            if (cache.containsKey(key)) {
+                return;   // the other queue finished first
+            }
+            finished.add(key);
+            cache.put(key, result.candles);
+            sourceNames.put(key, result.source);
+            requested.remove(key);
+            List<Consumer<List<Candle>>> callbacks = waiting.remove(key);
+            if (callbacks != null) {
+                for (Consumer<List<Candle>> callback : callbacks) {
                     callback.accept(new ArrayList<>(result.candles));
                 }
-            });
+            }
         });
     }
 
