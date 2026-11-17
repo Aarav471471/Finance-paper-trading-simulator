@@ -52,6 +52,37 @@ class ChartServiceTest {
     }
 
     @Test
+    void aPageWaitingForCandlesIsNotQueuedBehindBackgroundPrefetching() throws Exception {
+        // Each download takes 300 ms, like a slow network.
+        SimulatedHistoryProvider slow = new SimulatedHistoryProvider() {
+            @Override
+            public List<Candle> fetchCandles(Asset asset, Timeframe timeframe, int count) {
+                try {
+                    Thread.sleep(300);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                return super.fetchCandles(asset, timeframe, count);
+            }
+        };
+        ChartService charts = new ChartService(List.of(slow));
+        List<Integer> loaded = new CopyOnWriteArrayList<>();
+        SwingUtilities.invokeAndWait(() -> {
+            for (int i = 0; i < 20; i++) {   // 20 x 300 ms = 6 s of background work
+                charts.getCandles(new Stock("S" + i, "Stock " + i, 100, "Tech"), Timeframe.ONE_DAY);
+            }
+            charts.loadAsync(new Stock("AAPL", "Apple", 200, "Tech"), Timeframe.ONE_DAY,
+                    candles -> loaded.add(candles.size()));
+        });
+        long start = System.currentTimeMillis();
+        while (loaded.isEmpty() && System.currentTimeMillis() - start < 3000) {
+            Thread.sleep(50);
+            SwingUtilities.invokeAndWait(() -> { });
+        }
+        assertEquals(List.of(365), loaded, "the requested candles should arrive well before the 6 s prefetch queue drains");
+    }
+
+    @Test
     void liveTickUpdatesTheNewestCandle() {
         Candle c = new Candle(0, 100, 101, 99, 100, 10).withPrice(105);
         assertEquals(105, c.high(), 1e-9);
