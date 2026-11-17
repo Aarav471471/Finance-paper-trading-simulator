@@ -9,10 +9,8 @@ import com.papertrader.model.Timeframe;
 import javax.swing.SwingUtilities;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
@@ -31,7 +29,8 @@ public class ChartService implements PriceListener {
     private final List<HistoryProvider> providers;
     private final Map<String, List<Candle>> cache = new HashMap<>();
     private final Map<String, String> sourceNames = new HashMap<>();
-    private final Set<String> loading = new HashSet<>();
+    /** Everyone waiting for a download that is still running, by key. */
+    private final Map<String, List<Consumer<List<Candle>>>> waiting = new HashMap<>();
     private final ExecutorService loader = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "history-download");
         t.setDaemon(true);
@@ -69,16 +68,24 @@ public class ChartService implements PriceListener {
             onLoaded.accept(new ArrayList<>(cache.get(key)));
             return;
         }
-        if (!loading.add(key)) {
-            return;   // already downloading
+        // Already downloading (e.g. a chart on another page asked first): wait for that
+        // download too, instead of dropping this caller, which left Backtest stuck forever.
+        List<Consumer<List<Candle>>> callbacks = waiting.get(key);
+        if (callbacks != null) {
+            callbacks.add(onLoaded);
+            return;
         }
+        callbacks = new ArrayList<>();
+        callbacks.add(onLoaded);
+        waiting.put(key, callbacks);
         loader.submit(() -> {
             Result result = loadBlocking(asset, timeframe);
             SwingUtilities.invokeLater(() -> {
                 cache.put(key, result.candles);
                 sourceNames.put(key, result.source);
-                loading.remove(key);
-                onLoaded.accept(new ArrayList<>(result.candles));
+                for (Consumer<List<Candle>> callback : waiting.remove(key)) {
+                    callback.accept(new ArrayList<>(result.candles));
+                }
             });
         });
     }
