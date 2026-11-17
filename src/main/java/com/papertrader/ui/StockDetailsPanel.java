@@ -90,6 +90,11 @@ public class StockDetailsPanel extends BasePanel {
     private final Consumer<String> onNavigate;
 
     private Asset currentAsset;
+
+    /** The asset this page shows (null before one is chosen), so its price is refreshed first. */
+    public Asset getShownAsset() {
+        return currentAsset;
+    }
     private boolean isWatchlisted = true;
 
     // Header Components
@@ -1531,9 +1536,7 @@ public class StockDetailsPanel extends BasePanel {
     }
 
     private boolean isIndianAsset(String sym) {
-        if (sym == null) return false;
-        return List.of("RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK", "BHARTIARTL",
-                "SBIN", "ITC", "LT", "TATAMOTORS", "TRENT", "ETERNAL").contains(sym.toUpperCase());
+        return com.papertrader.feed.YahooSymbols.isIndian(sym);
     }
 
     // Custom Canvas for sleek gradient progress bar with pin marker

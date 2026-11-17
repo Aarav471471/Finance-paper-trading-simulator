@@ -39,6 +39,9 @@ public class MarketDataService {
     private static final long SNAPSHOT_MAX_AGE = 60_000;          // 1 minute
     private static final long FUNDAMENTALS_MAX_AGE = 6 * 3_600_000; // 6 hours
     private static final long NEWS_MAX_AGE = 10 * 60_000;         // 10 minutes
+    private static final long LIST_MAX_AGE = 5 * 60_000;         // list screens: 5 minutes
+    private static final long LIST_SNAPSHOT_GAP_MS = 250;
+    private static final long LIST_FUNDAMENTALS_GAP_MS = 800;
 
     private final List<SnapshotProvider> snapshotProviders;
     private final FundamentalsProvider fundamentalsProvider;   // null = offline mode
@@ -50,6 +53,12 @@ public class MarketDataService {
     private final Map<String, Long> lastAttempt = new HashMap<>();
     private final ExecutorService worker = Executors.newFixedThreadPool(2, r -> {
         Thread t = new Thread(r, "market-data");
+        t.setDaemon(true);
+        return t;
+    });
+    /** For list screens: one download at a time, with a pause after each (see listSnapshot). */
+    private final ExecutorService listWorker = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "market-data-list");
         t.setDaemon(true);
         return t;
     });
@@ -89,6 +98,40 @@ public class MarketDataService {
         return new MarketSnapshot(asset.getPrice(), merged.previousClose(), merged.open(),
                 Math.max(merged.dayHigh(), asset.getPrice()), Math.min(merged.dayLow(), asset.getPrice()),
                 merged.volume(), merged.week52High(), merged.week52Low(), merged.source());
+    }
+
+    /**
+     * Like {@link #snapshot} for screens that list every asset (the Markets table): downloads go
+     * through a slower queue and are refreshed less often, so 150+ shares do not flood the data
+     * source, and the asset a details page asks for is never stuck behind them.
+     */
+    public MarketSnapshot listSnapshot(Asset asset) {
+        String key = "snap:" + asset.getSymbol();
+        for (SnapshotProvider provider : snapshotProviders) {
+            if (provider.supports(asset)) {
+                refreshInBackground(key, LIST_MAX_AGE, () -> provider.fetchSnapshot(asset), LIST_SNAPSHOT_GAP_MS);
+                break;
+            }
+        }
+        MarketSnapshot online = (MarketSnapshot) cache.get(key);
+        MarketSnapshot fromCandles = fromCandles(asset);
+        if (online == null) {
+            return fromCandles;
+        }
+        MarketSnapshot merged = online.fillFrom(fromCandles);
+        return new MarketSnapshot(asset.getPrice(), merged.previousClose(), merged.open(),
+                Math.max(merged.dayHigh(), asset.getPrice()), Math.min(merged.dayLow(), asset.getPrice()),
+                merged.volume(), merged.week52High(), merged.week52Low(), merged.source());
+    }
+
+    /** Like {@link #fundamentals} for screens that list every asset: spaced-out background downloads. */
+    public Optional<Fundamentals> listFundamentals(Asset asset) {
+        String key = "fund:" + asset.getSymbol();
+        if (fundamentalsProvider != null) {
+            refreshInBackground(key, FUNDAMENTALS_MAX_AGE, () -> fundamentalsProvider.fetchFundamentals(asset),
+                    LIST_FUNDAMENTALS_GAP_MS);
+        }
+        return Optional.ofNullable((Fundamentals) cache.get(key));
     }
 
     /** Day numbers calculated from 5-minute candles of the latest session, 52-week from daily candles. */
@@ -213,6 +256,30 @@ public class MarketDataService {
     }
 
     // ---------------------------------------------------------------- background loading
+
+    /** Same as refresh, on the list queue, pausing after each download. Uses its own "tried" times. */
+    private void refreshInBackground(String key, long maxAge, Callable<Object> download, long pauseMillis) {
+        long now = System.currentTimeMillis();
+        String attemptKey = "list:" + key;
+        Long last = lastAttempt.get(attemptKey);
+        if (last != null && now - last < maxAge) {
+            return;
+        }
+        lastAttempt.put(attemptKey, now);
+        listWorker.submit(() -> {
+            try {
+                Object value = download.call();
+                SwingUtilities.invokeLater(() -> cache.put(key, value));
+            } catch (Exception e) {
+                // not reachable: retry after maxAge
+            }
+            try {
+                Thread.sleep(pauseMillis);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+    }
 
     /** Starts a background download if the key was not tried within maxAge. Failures simply retry later. */
     private void refresh(String key, long maxAge, Callable<Object> download) {

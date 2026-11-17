@@ -31,6 +31,17 @@ public class MarketService implements PriceListener {
         }
     }
 
+    /** Adds an asset found later (a share the user looked up). Call on the Swing thread. */
+    public void addAsset(Asset asset) {
+        if (assets.containsKey(asset.getSymbol())) {
+            return;
+        }
+        assets.put(asset.getSymbol(), asset);
+        LinkedList<Double> history = new LinkedList<>();
+        history.add(asset.getPrice());
+        priceHistory.put(asset.getSymbol(), history);
+    }
+
     public List<Asset> getAllAssets() {
         return new ArrayList<>(assets.values());
     }

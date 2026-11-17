@@ -94,6 +94,11 @@ public class TradePanel extends BasePanel {
 
     // Current trade state
     private Asset currentAsset;
+
+    /** The asset this page shows (null before one is chosen), so its price is refreshed first. */
+    public Asset getShownAsset() {
+        return currentAsset;
+    }
     private OrderSide currentSide = OrderSide.BUY;
     private String currentProduct = "CNC"; // CNC (Delivery) or MIS (Intraday)
     private String currentOrderType = "Market"; // Market, Limit, SL-M, TP
@@ -1633,9 +1638,7 @@ public class TradePanel extends BasePanel {
     }
 
     private boolean isIndianAsset(String sym) {
-        if (sym == null) return false;
-        return List.of("RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "BHARTIARTL",
-                "SBIN", "ITC", "LT", "TATAMOTORS", "TRENT", "ETERNAL").contains(sym.toUpperCase());
+        return com.papertrader.feed.YahooSymbols.isIndian(sym);
     }
 
     // -------------------------------------------------------------------------
@@ -1720,7 +1723,7 @@ public class TradePanel extends BasePanel {
 
         void updateForAsset(Asset a) {
             if (a == null) return;
-            boolean isIndian = List.of("RELIANCE", "TCS", "INFY", "HDFCBANK").contains(a.getSymbol().toUpperCase());
+            boolean isIndian = com.papertrader.feed.YahooSymbols.isIndian(a.getSymbol());
             String cur = isIndian ? "₹" : "$";
             // Built around the REAL bid/ask of the asset (see OrderBookSimulator)
             OrderBookSimulator.OrderBook book = orderBook.simulate(a, 5);

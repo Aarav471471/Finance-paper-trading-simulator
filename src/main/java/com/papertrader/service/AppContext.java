@@ -20,5 +20,6 @@ public record AppContext(
         BotService bots,
         FeeCalculator fees,
         PriceFeed priceFeed,
+        StockLookupService lookup,
         double startingCash) {
 }
