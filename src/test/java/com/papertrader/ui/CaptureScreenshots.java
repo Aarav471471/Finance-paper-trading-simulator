@@ -28,7 +28,10 @@ import org.junit.jupiter.api.Test;
 
 import javax.imageio.ImageIO;
 import javax.swing.SwingUtilities;
+import java.awt.Component;
+import java.awt.Container;
 import java.awt.Dimension;
+import javax.swing.JScrollPane;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -116,8 +119,8 @@ public class CaptureScreenshots {
                     frame.validate();
                     frame.repaint();
 
-                    int w = frame.getWidth();
-                    int h = frame.getHeight();
+                    int w = frame.getContentPane().getWidth();
+                    int h = frame.getContentPane().getHeight();
                     BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
                     Graphics2D g2 = img.createGraphics();
                     frame.getContentPane().printAll(g2);
@@ -160,6 +163,44 @@ public class CaptureScreenshots {
                         gMax.dispose();
                         ImageIO.write(imgMax, "PNG", new File(outDir, "screenshot_trade_maximized.png"));
                         ccp.setMaximized(false);
+                        frame.validate();
+                        frame.repaint();
+                    }
+
+                    if ("Portfolio".equals(pageName)) {
+                        PortfolioPanel pp = (PortfolioPanel) p;
+                        Field chartField = PortfolioPanel.class.getDeclaredField("performanceChart");
+                        chartField.setAccessible(true);
+                        com.papertrader.ui.components.PortfolioPerformanceChart ppc = (com.papertrader.ui.components.PortfolioPerformanceChart) chartField.get(pp);
+                        ppc.setMaximized(true);
+                        frame.validate();
+                        frame.repaint();
+                        BufferedImage imgMax = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+                        Graphics2D gMax = imgMax.createGraphics();
+                        frame.getContentPane().printAll(gMax);
+                        gMax.dispose();
+                        ImageIO.write(imgMax, "PNG", new File(outDir, "screenshot_portfolio_maximized.png"));
+                        ppc.setMaximized(false);
+                        frame.validate();
+                        frame.repaint();
+                    }
+
+                    if ("History".equals(pageName)) {
+                        HistoryPanel hp = (HistoryPanel) p;
+                        Field chartField = HistoryPanel.class.getDeclaredField("growthCard");
+                        chartField.setAccessible(true);
+                        Object gc = chartField.get(hp);
+                        Method maxMethod = gc.getClass().getDeclaredMethod("setMaximized", boolean.class);
+                        maxMethod.setAccessible(true);
+                        maxMethod.invoke(gc, true);
+                        frame.validate();
+                        frame.repaint();
+                        BufferedImage imgMax = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+                        Graphics2D gMax = imgMax.createGraphics();
+                        frame.getContentPane().printAll(gMax);
+                        gMax.dispose();
+                        ImageIO.write(imgMax, "PNG", new File(outDir, "screenshot_history_maximized.png"));
+                        maxMethod.invoke(gc, false);
                         frame.validate();
                         frame.repaint();
                     }

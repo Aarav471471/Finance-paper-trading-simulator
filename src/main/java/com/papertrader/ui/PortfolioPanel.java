@@ -166,7 +166,9 @@ public class PortfolioPanel extends BasePanel {
     /** Primary full terminal constructor. */
     public PortfolioPanel(AuthService authService, MarketService marketService, PortfolioService portfolioService,
                           TradingService tradingService, Consumer<String> navHandler) {
-        super("Portfolio Management", "Comprehensive overview of active holdings, performance alpha, and risk intelligence.");
+        super("", ""); // Handled by custom terminal header
+        setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 0));
+        removeAll();
         this.authService = authService;
         this.marketService = marketService;
         this.portfolioService = portfolioService;
@@ -180,7 +182,7 @@ public class PortfolioPanel extends BasePanel {
         JPanel workspace = new JPanel();
         workspace.setLayout(new BoxLayout(workspace, BoxLayout.Y_AXIS));
         workspace.setBackground(Theme.APP_BG);
-        workspace.setBorder(BorderFactory.createEmptyBorder(12, 16, 20, 16));
+        workspace.setBorder(BorderFactory.createEmptyBorder(10, 14, 16, 14));
 
         // 1. Top Command & Action Bar
         workspace.add(buildTopCommandBar());
@@ -406,11 +408,11 @@ public class PortfolioPanel extends BasePanel {
         ));
 
         performanceChart = new PortfolioPerformanceChart();
-        performanceChart.setPreferredSize(new Dimension(650, 310));
         chartCard.add(performanceChart, BorderLayout.CENTER);
 
         // Right 35%: Asset Allocation Matrix
-        allocationCard.setPreferredSize(new Dimension(380, 310));
+        allocationCard.setPreferredSize(new Dimension(325, 310));
+        allocationCard.setMinimumSize(new Dimension(280, 310));
 
         row.add(chartCard, BorderLayout.CENTER);
         row.add(allocationCard, BorderLayout.EAST);
@@ -509,27 +511,27 @@ public class PortfolioPanel extends BasePanel {
         holdingsTable.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
 
         // Custom Column Renderers (Proportional weights to fit 1-page layout without horizontal scroll)
-        holdingsTable.getColumnModel().getColumn(0).setPreferredWidth(130);
+        holdingsTable.getColumnModel().getColumn(0).setPreferredWidth(120);
         holdingsTable.getColumnModel().getColumn(0).setCellRenderer(new AssetCellRenderer());
 
         DefaultTableCellRenderer rightRenderer = new DefaultTableCellRenderer();
         rightRenderer.setHorizontalAlignment(SwingConstants.RIGHT);
 
-        holdingsTable.getColumnModel().getColumn(1).setPreferredWidth(60);
-        holdingsTable.getColumnModel().getColumn(2).setPreferredWidth(70);
-        holdingsTable.getColumnModel().getColumn(3).setPreferredWidth(70);
-        holdingsTable.getColumnModel().getColumn(4).setPreferredWidth(75);
-        holdingsTable.getColumnModel().getColumn(5).setPreferredWidth(75);
+        holdingsTable.getColumnModel().getColumn(1).setPreferredWidth(55);
+        holdingsTable.getColumnModel().getColumn(2).setPreferredWidth(65);
+        holdingsTable.getColumnModel().getColumn(3).setPreferredWidth(65);
+        holdingsTable.getColumnModel().getColumn(4).setPreferredWidth(70);
+        holdingsTable.getColumnModel().getColumn(5).setPreferredWidth(70);
         for (int i = 1; i <= 5; i++) {
             holdingsTable.getColumnModel().getColumn(i).setCellRenderer(new MoneyCellRenderer(i));
         }
-        holdingsTable.getColumnModel().getColumn(6).setPreferredWidth(110);
+        holdingsTable.getColumnModel().getColumn(6).setPreferredWidth(100);
         holdingsTable.getColumnModel().getColumn(6).setCellRenderer(new PnlCellRenderer());
 
-        holdingsTable.getColumnModel().getColumn(7).setPreferredWidth(65);
+        holdingsTable.getColumnModel().getColumn(7).setPreferredWidth(60);
         holdingsTable.getColumnModel().getColumn(7).setCellRenderer(new SparklineCellRenderer());
 
-        holdingsTable.getColumnModel().getColumn(8).setPreferredWidth(110);
+        holdingsTable.getColumnModel().getColumn(8).setPreferredWidth(100);
         holdingsTable.getColumnModel().getColumn(8).setCellRenderer(new ActionsCellRenderer());
         holdingsTable.getColumnModel().getColumn(8).setCellEditor(new ActionsCellEditor());
 
@@ -656,16 +658,11 @@ public class PortfolioPanel extends BasePanel {
     // =========================================================================
 
     private JPanel buildPeriodicAndActivityRow() {
-        JPanel row = new JPanel(new BorderLayout(12, 0));
+        JPanel row = new JPanel(new GridLayout(1, 2, 12, 0));
         row.setOpaque(false);
 
-        // Left (7 cols): Periodic P&L Breakdown
-        periodicPnlCard.setPreferredSize(new Dimension(640, 220));
-        row.add(periodicPnlCard, BorderLayout.CENTER);
-
-        // Right (5 cols): Recent Portfolio Activity Mini-Ledger
-        recentActivityCard.setPreferredSize(new Dimension(420, 220));
-        row.add(recentActivityCard, BorderLayout.EAST);
+        row.add(periodicPnlCard);
+        row.add(recentActivityCard);
 
         return row;
     }
@@ -2012,15 +2009,15 @@ public class PortfolioPanel extends BasePanel {
             JPanel center = new JPanel(new BorderLayout(10, 8));
             center.setOpaque(false);
 
-            donutCanvas.setPreferredSize(new Dimension(130, 130));
+            donutCanvas.setPreferredSize(new Dimension(105, 105));
             center.add(donutCanvas, BorderLayout.WEST);
 
             JPanel rows = new JPanel(new GridLayout(4, 1, 0, 4));
             rows.setOpaque(false);
-            rows.add(buildBreakdownRow("Indian Equities (NSE/BSE)", Theme.GAIN, lblIndianVal, lblIndianPct));
-            rows.add(buildBreakdownRow("US Equities (NASDAQ/NYSE)", Theme.ACCENT, lblUsVal, lblUsPct));
-            rows.add(buildBreakdownRow("Cryptocurrency (Spot)", Theme.LOSS, lblCryptoVal, lblCryptoPct));
-            rows.add(buildBreakdownRow("Liquid Cash & Equiv.", new Color(0x60, 0xA5, 0xFA), lblCashVal, lblCashPct));
+            rows.add(buildBreakdownRow("Indian Equities", Theme.GAIN, lblIndianVal, lblIndianPct));
+            rows.add(buildBreakdownRow("US Equities", Theme.ACCENT, lblUsVal, lblUsPct));
+            rows.add(buildBreakdownRow("Crypto", Theme.LOSS, lblCryptoVal, lblCryptoPct));
+            rows.add(buildBreakdownRow("Cash & Liquid", new Color(0x60, 0xA5, 0xFA), lblCashVal, lblCashPct));
             center.add(rows, BorderLayout.CENTER);
             add(center, BorderLayout.CENTER);
 
@@ -2438,7 +2435,7 @@ public class PortfolioPanel extends BasePanel {
         private final JLabel capValLbl = new JLabel("N/A");
         private final JProgressBar divBar = new JProgressBar(0, 100);
         private final JProgressBar capBar = new JProgressBar(0, 100);
-        private final JLabel capDescLbl = new JLabel("Largest position share of the invested money.");
+        private final JLabel capDescLbl = new JLabel("Largest position share.");
 
         public HealthScoreCard() {
             setLayout(new BorderLayout(0, 8));
@@ -2482,7 +2479,7 @@ public class PortfolioPanel extends BasePanel {
             divBar.setBackground(Theme.SIDEBAR_BG);
             divBar.setPreferredSize(new Dimension(100, 4));
             divBar.setBorderPainted(false);
-            JLabel d1 = new JLabel("Score from position weights (1 - sum of squared weights).");
+            JLabel d1 = new JLabel("Position weights score.");
             d1.setFont(Theme.TINY);
             d1.setForeground(Theme.TXT_MUTED);
             m1.add(l1);
