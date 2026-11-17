@@ -1,0 +1,25 @@
+%% DFD Level 0 (Context Diagram): PaperTrader 3D
+flowchart LR
+    classDef ext fill:#fff3cd,stroke:#8a6d00,stroke-width:2px,color:#000
+    classDef proc fill:#d6eaff,stroke:#1f5fa8,stroke-width:2px,color:#000
+
+    T["TRADER<br/>(registered user)"]:::ext
+    MD["MARKET DATA PROVIDERS<br/>Binance · Groww · Finnhub<br/>Yahoo Finance · CoinGecko"]:::ext
+    CFG["SYSTEM CONFIGURATION<br/>config.properties / env vars"]:::ext
+    FS["LOCAL FILE SYSTEM<br/>(exported CSV)"]:::ext
+
+    P0(("0<br/>PaperTrader 3D<br/>Paper Trading<br/>Simulator")):::proc
+
+    T -- "login / register details" --> P0
+    T -- "order requests (asset, side, qty, type, price)" --> P0
+    T -- "backtest settings, bot rules, chart range" --> P0
+    P0 -- "auth result, order confirmations / rejections" --> T
+    P0 -- "portfolio, P&L, charts, order book" --> T
+    P0 -- "risk analytics, backtest results, leaderboard" --> T
+
+    P0 -- "quote / history / fundamentals requests" --> MD
+    MD -- "live quotes, historical candles" --> P0
+    MD -- "fundamentals, news, market cap, indices" --> P0
+
+    CFG -- "API keys, data mode, data folder" --> P0
+    P0 -- "transaction history CSV" --> FS

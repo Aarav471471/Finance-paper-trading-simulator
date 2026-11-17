@@ -1,0 +1,90 @@
+%% DFD Level 1: PaperTrader 3D (main processes and data stores)
+flowchart LR
+    classDef ext fill:#fff3cd,stroke:#8a6d00,stroke-width:2px,color:#000
+    classDef proc fill:#d6eaff,stroke:#1f5fa8,stroke-width:2px,color:#000
+    classDef store fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#000
+
+    T["TRADER"]:::ext
+    MD["MARKET DATA<br/>PROVIDERS"]:::ext
+    CFG["SYSTEM<br/>CONFIGURATION"]:::ext
+    FS["LOCAL FILE<br/>SYSTEM"]:::ext
+
+    P1(("1.0<br/>Authenticate<br/>User")):::proc
+    P2(("2.0<br/>Acquire<br/>Market Data")):::proc
+    P3(("3.0<br/>Process<br/>Orders")):::proc
+    P4(("4.0<br/>Value<br/>Portfolio")):::proc
+    P5(("5.0<br/>Build Charts &<br/>Indicators")):::proc
+    P6(("6.0<br/>Run<br/>Backtest")):::proc
+    P7(("7.0<br/>Run Trading<br/>Bots")):::proc
+    P8(("8.0<br/>Analyse<br/>Performance")):::proc
+    P9(("9.0<br/>Rank<br/>Leaderboard")):::proc
+    P10(("10.0<br/>Export<br/>History")):::proc
+
+    D1[("D1 users.csv")]:::store
+    D2[("D2 holdings.csv")]:::store
+    D3[("D3 transactions.csv")]:::store
+    D4[("D4 equity.csv")]:::store
+    D5[("D5 pending orders<br/>(in memory)")]:::store
+
+    %% 1.0 Authenticate
+    T -- "username, password" --> P1
+    P1 -- "session / auth error" --> T
+    D1 -- "stored user, password hash" --> P1
+    P1 -- "new user, starting cash" --> D1
+
+    %% 2.0 Market data
+    CFG -- "API keys, data mode" --> P2
+    P2 -- "symbol requests" --> MD
+    MD -- "live quotes, fundamentals, news" --> P2
+    P2 -- "prices, snapshots, fundamentals, news" --> T
+
+    %% 3.0 Orders
+    T -- "order request / cancel / reset" --> P3
+    P2 -- "price update" --> P3
+    D2 -- "owned quantity, avg cost" --> P3
+    P3 -- "updated holdings" --> D2
+    P3 -- "updated cash balance" --> D1
+    P3 -- "transaction record" --> D3
+    P3 <-- "waiting orders" --> D5
+    P3 -- "fill confirmation / rejection" --> T
+
+    %% 4.0 Portfolio
+    D1 -- "cash balance" --> P4
+    D2 -- "holdings" --> P4
+    P2 -- "current prices" --> P4
+    P4 -- "market value, P&L, net worth" --> T
+
+    %% 5.0 Charts
+    T -- "asset, chart range" --> P5
+    MD -- "historical candles" --> P5
+    P2 -- "latest price" --> P5
+    P5 -- "candles, SMA/EMA/RSI/MACD/VWAP" --> T
+
+    %% 6.0 Backtest
+    T -- "asset, strategy, replay speed" --> P6
+    P5 -- "historical candles" --> P6
+    P6 -- "equity curve, trades, buy/sell markers" --> T
+
+    %% 7.0 Bots
+    T -- "bot asset, strategy / rule, qty" --> P7
+    P5 -- "recent candles" --> P7
+    P7 -- "bot buy / sell orders" --> P3
+    P7 -- "bot activity log" --> T
+
+    %% 8.0 Analytics
+    P4 -- "net worth snapshot" --> P8
+    P8 -- "equity point" --> D4
+    D4 -- "equity curve" --> P8
+    D3 -- "closed trades, realised P&L" --> P8
+    P8 -- "Sharpe, Sortino, drawdown, win rate, profit factor" --> T
+
+    %% 9.0 Leaderboard
+    D1 -- "all users" --> P9
+    P4 -- "net worth per user" --> P9
+    D3 -- "realised P&L, trade count" --> P9
+    P9 -- "ranking" --> T
+
+    %% 10.0 Export
+    T -- "export request, file name" --> P10
+    D3 -- "transactions" --> P10
+    P10 -- "CSV file" --> FS

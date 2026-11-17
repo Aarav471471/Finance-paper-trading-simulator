@@ -1,0 +1,47 @@
+%% DFD Level 2: explosion of process 3.0 Process Orders (TradingService)
+flowchart LR
+    classDef ext fill:#fff3cd,stroke:#8a6d00,stroke-width:2px,color:#000
+    classDef proc fill:#d6eaff,stroke:#1f5fa8,stroke-width:2px,color:#000
+    classDef store fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#000
+    classDef other fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px,color:#000
+
+    T["TRADER"]:::ext
+    P2(("2.0<br/>Acquire<br/>Market Data")):::other
+    P7(("7.0<br/>Run Trading<br/>Bots")):::other
+
+    P31(("3.1<br/>Validate<br/>Order")):::proc
+    P32(("3.2<br/>Check<br/>Trigger Price")):::proc
+    P33(("3.3<br/>Determine<br/>Fill Price")):::proc
+    P34(("3.4<br/>Calculate<br/>Fee")):::proc
+    P35(("3.5<br/>Settle Cash &<br/>Holdings")):::proc
+    P36(("3.6<br/>Record<br/>Transaction")):::proc
+    P37(("3.7<br/>Monitor<br/>Pending Orders")):::proc
+
+    D1[("D1 users.csv")]:::store
+    D2[("D2 holdings.csv")]:::store
+    D3[("D3 transactions.csv")]:::store
+    D5[("D5 pending orders")]:::store
+
+    T -- "order (Market / Limit / SL-M / TP)" --> P31
+    P7 -- "bot order" --> P31
+    D2 -- "owned quantity" --> P31
+    D5 -- "queued sell quantity" --> P31
+    P31 -- "invalid order error" --> T
+    P31 -- "valid order" --> P32
+
+    P32 -- "order not yet triggered" --> D5
+    P32 -- "executable order" --> P33
+
+    P2 -- "price update" --> P37
+    D5 -- "waiting orders" --> P37
+    P37 -- "triggered order" --> P33
+
+    P33 -- "fill price (bid/ask + slippage, limit-adjusted)" --> P34
+    P34 -- "trade value, fee" --> P35
+    D2 -- "average cost" --> P35
+    P35 -- "cash withdrawn / deposited" --> D1
+    P35 -- "units added / removed" --> D2
+    P35 -- "insufficient funds error" --> T
+    P35 -- "filled order, realised P&L" --> P36
+    P36 -- "transaction record" --> D3
+    P36 -- "fill confirmation" --> T
