@@ -7,7 +7,9 @@ import com.papertrader.model.Stock;
 import com.papertrader.model.Timeframe;
 import org.junit.jupiter.api.Test;
 
+import javax.swing.SwingUtilities;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -27,6 +29,26 @@ class ChartServiceTest {
             assertTrue(c.high() >= Math.max(c.open(), c.close()) - 1e-9);
             assertTrue(c.low() <= Math.min(c.open(), c.close()) + 1e-9);
         }
+    }
+
+    @Test
+    void secondRequestWhileDownloadingStillGetsTheCandles() throws Exception {
+        // Regression: Backtest asked for daily candles another page was already downloading,
+        // its callback was dropped, and the page sat on "Downloading..." forever.
+        Asset stock = new Stock("AAPL", "Apple", 200, "Tech");
+        ChartService charts = new ChartService(List.of(new SimulatedHistoryProvider()));
+        List<Integer> first = new CopyOnWriteArrayList<>();
+        List<Integer> second = new CopyOnWriteArrayList<>();
+        SwingUtilities.invokeAndWait(() -> {
+            charts.loadAsync(stock, Timeframe.ONE_DAY, candles -> first.add(candles.size()));
+            charts.loadAsync(stock, Timeframe.ONE_DAY, candles -> second.add(candles.size()));
+        });
+        for (int i = 0; i < 100 && (first.isEmpty() || second.isEmpty()); i++) {
+            Thread.sleep(50);
+            SwingUtilities.invokeAndWait(() -> { });
+        }
+        assertEquals(List.of(365), first);
+        assertEquals(List.of(365), second);
     }
 
     @Test
