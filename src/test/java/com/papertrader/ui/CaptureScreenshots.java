@@ -81,7 +81,8 @@ public class CaptureScreenshots {
         tradingService.placeOrder(demo, marketService.findBySymbol("RELIANCE").orElse(null), OrderSide.BUY, 20, 2900.0);
 
         AppContext ctx = new AppContext(authService, marketService, tradingService, portfolioService,
-                chartService, marketData, analytics, leaderboard, bots, fees, priceFeed, 100000.0);
+                chartService, marketData, analytics, leaderboard, bots, fees, priceFeed,
+                new com.papertrader.service.StockLookupService(marketService, priceFeed, null, null), 100000.0);
 
         SwingUtilities.invokeAndWait(() -> {
             try {

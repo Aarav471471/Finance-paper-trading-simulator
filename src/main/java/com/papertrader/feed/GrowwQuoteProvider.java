@@ -4,7 +4,11 @@ import com.papertrader.model.Asset;
 import com.papertrader.model.Stock;
 import org.json.JSONObject;
 
+import com.papertrader.model.IndianStocks;
+
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,9 +51,9 @@ public class GrowwQuoteProvider extends HttpQuoteProvider {
     public Map<String, Quote> fetchQuotes(List<Asset> assets) throws IOException {
         Map<String, Quote> quotes = new HashMap<>();
         IOException lastError = null;
-        for (Asset asset : assets) {   // one symbol per request; 12 shares every 10 s is well under 300/min
+        for (Asset asset : assets) {   // one symbol per request, at most 40 every 10 s = 240/min (limit 300/min)
             try {
-                Quote quote = parse(download(asset.getSymbol()));
+                Quote quote = parse(download(IndianStocks.nseSymbol(asset.getSymbol())));
                 if (quote != null) {
                     quotes.put(asset.getSymbol(), quote);
                 }
@@ -66,13 +70,13 @@ public class GrowwQuoteProvider extends HttpQuoteProvider {
     /** Asks for one quote. On 401 (token expired) logs in once more and tries again. */
     private String download(String symbol) throws IOException {
         try {
-            return Http.get(QUOTE_URL + symbol, headers());
+            return Http.get(QUOTE_URL + URLEncoder.encode(symbol, StandardCharsets.UTF_8), headers());
         } catch (Http.HttpStatusException e) {
             if (e.getStatusCode() != 401 || !session.canRenew()) {
                 throw e.getStatusCode() == 401 ? new IOException("Groww token expired or not approved") : e;
             }
             session.invalidate();
-            return Http.get(QUOTE_URL + symbol, headers());
+            return Http.get(QUOTE_URL + URLEncoder.encode(symbol, StandardCharsets.UTF_8), headers());
         }
     }
 
@@ -83,6 +87,11 @@ public class GrowwQuoteProvider extends HttpQuoteProvider {
     @Override
     public int getRefreshSeconds() {
         return 10;
+    }
+
+    @Override
+    public int maxSymbolsPerRefresh() {
+        return 40;
     }
 
     /** Reads Groww's quote JSON. Returns null when the answer has no usable price. */

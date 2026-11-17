@@ -26,6 +26,14 @@ public interface QuoteProvider {
     /** How often to ask, in seconds (free plans have rate limits). */
     int getRefreshSeconds();
 
+    /**
+     * Most assets to ask for in one refresh. When a provider has more, LivePriceFeed asks for
+     * them in turns (the asset on screen and the user's holdings first). Unlimited by default.
+     */
+    default int maxSymbolsPerRefresh() {
+        return Integer.MAX_VALUE;
+    }
+
     /** Extra words for the status bar after a fetch, e.g. "via Yahoo Finance". Empty by default. */
     default String getStatusNote() {
         return "";

@@ -39,6 +39,7 @@ public class ChartService implements PriceListener {
     /** Keys that finished downloading; read from the download threads to skip stale queued work. */
     private final Set<String> finished = ConcurrentHashMap.newKeySet();
     /** Background pre-fetching (getCandles): many requests, one at a time, so we don't flood the APIs. */
+    private static final long PREFETCH_GAP_MS = 400;
     private final ExecutorService prefetchLoader = Executors.newSingleThreadExecutor(r -> daemon(r, "history-prefetch"));
     /** Downloads a page is waiting on (charts, Backtest): never queued behind the pre-fetching above. */
     private final ExecutorService requestLoader = Executors.newFixedThreadPool(2, r -> daemon(r, "history-download"));
@@ -65,7 +66,13 @@ public class ChartService implements PriceListener {
             String key = key(asset, timeframe);
             if (!waiting.containsKey(key)) {
                 waiting.put(key, new ArrayList<>());
-                prefetchLoader.submit(() -> download(asset, timeframe, key));
+                prefetchLoader.submit(() -> {
+                    boolean needed = !finished.contains(key);
+                    download(asset, timeframe, key);
+                    if (needed) {
+                        pauseBetweenPrefetches();
+                    }
+                });
             }
             return new ArrayList<>();
         }
@@ -95,6 +102,19 @@ public class ChartService implements PriceListener {
     }
 
     /** Runs on a download thread; hands the result to the UI thread. */
+    /**
+     * The market list asks for the history of every share (150+), so background downloads are
+     * spaced out to stay well under the data sources' rate limits. Pages that wait for a chart
+     * use the other queue and are not slowed down.
+     */
+    private static void pauseBetweenPrefetches() {
+        try {
+            Thread.sleep(PREFETCH_GAP_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     private void download(Asset asset, Timeframe timeframe, String key) {
         if (finished.contains(key)) {
             return;   // already downloaded by the other queue

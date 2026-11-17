@@ -741,8 +741,6 @@ public class StockTradeTicketPanel extends JPanel {
     }
 
     private boolean isIndianAsset(String sym) {
-        if (sym == null) return false;
-        return List.of("RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK", "BHARTIARTL",
-                "SBIN", "ITC", "LT", "TATAMOTORS", "TRENT", "ETERNAL").contains(sym.toUpperCase());
+        return com.papertrader.feed.YahooSymbols.isIndian(sym);
     }
 }

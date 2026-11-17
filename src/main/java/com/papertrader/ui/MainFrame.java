@@ -103,6 +103,7 @@ public class MainFrame extends JFrame {
         pages.put("Dashboard", dashboardPanel);
         MarketPanel marketPanel = new MarketPanel(marketService, navHandler);
         marketPanel.setMarketData(ctx.marketData());
+        marketPanel.setStockLookup(ctx.lookup());
         pages.put("Markets", marketPanel);
         pages.put("Stock Details", stockDetailsPanel);
         pages.put("Trade", tradePanel);
@@ -573,9 +574,28 @@ public class MainFrame extends JFrame {
             ctx.analytics().recordSnapshot(authService.getCurrentUser());
         }
 
+        if (authService.isLoggedIn()) {
+            priceFeed.setPrioritySymbols(prioritySymbols());
+        }
+
         if (authService.isLoggedIn() && currentPage != null) {
             currentPage.refresh();
         }
+    }
+
+    /** The shares to keep freshest: the one on the details / trade page and the user's holdings. */
+    private java.util.Set<String> prioritySymbols() {
+        java.util.Set<String> symbols = new java.util.HashSet<>();
+        for (com.papertrader.model.Holding h : authService.getCurrentUser().getPortfolio().getHoldings()) {
+            symbols.add(h.getSymbol());
+        }
+        if (pages.get("Stock Details") instanceof StockDetailsPanel details && details.getShownAsset() != null) {
+            symbols.add(details.getShownAsset().getSymbol());
+        }
+        if (pages.get("Trade") instanceof TradePanel trade && trade.getShownAsset() != null) {
+            symbols.add(trade.getShownAsset().getSymbol());
+        }
+        return symbols;
     }
 
     private void logout() {
