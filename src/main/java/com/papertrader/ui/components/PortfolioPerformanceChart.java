@@ -220,11 +220,11 @@ public class PortfolioPerformanceChart extends JPanel {
         bar.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Theme.BORDER_CUSTOM));
 
         // ROW 1: Titles & Hero Metric (Left) + Mode Selector & Maximize Button (Right)
-        JPanel row1 = new JPanel(new BorderLayout(6, 0));
+        // Each row puts its right-hand controls on a second line when the chart is narrow.
+        JPanel row1 = LeadingTrailingLayout.newRow(6, 0);
         row1.setOpaque(false);
-        row1.setPreferredSize(new Dimension(100, 24));
 
-        JPanel titles = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+        JPanel titles = new JPanel(new WrapLayout(FlowLayout.LEFT, 6, 2));
         titles.setOpaque(false);
 
         JLabel title = new JLabel("PORTFOLIO PERFORMANCE");
@@ -240,9 +240,9 @@ public class PortfolioPerformanceChart extends JPanel {
         titles.add(title);
         titles.add(heroVal);
         titles.add(retPill);
-        row1.add(titles, BorderLayout.WEST);
+        row1.add(titles);
 
-        JPanel row1Right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 1));
+        JPanel row1Right = new JPanel(new WrapLayout(FlowLayout.RIGHT, 4, 1));
         row1Right.setOpaque(false);
 
         // Chart Mode Selector: [Line] [Candles] with custom vector icons
@@ -261,15 +261,14 @@ public class PortfolioPerformanceChart extends JPanel {
         btnMaximize = createZoomBtn("⛶", "Maximize Chart", e -> toggleMaximize());
         row1Right.add(btnMaximize);
 
-        row1.add(row1Right, BorderLayout.EAST);
+        row1.add(row1Right);
         bar.add(row1);
 
         // ROW 2: Benchmark Checkbox (Left) + Timeframe Pills & Zoom Controls (Right)
-        JPanel row2 = new JPanel(new BorderLayout(6, 0));
+        JPanel row2 = LeadingTrailingLayout.newRow(6, 0);
         row2.setOpaque(false);
-        row2.setPreferredSize(new Dimension(100, 24));
 
-        JPanel row2Left = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 1));
+        JPanel row2Left = new JPanel(new WrapLayout(FlowLayout.LEFT, 6, 1));
         row2Left.setOpaque(false);
 
         JCheckBox benchToggle = new JCheckBox("vs S&P 500 (SPY)", showBenchmark);
@@ -283,9 +282,9 @@ public class PortfolioPerformanceChart extends JPanel {
             repaint();
         });
         row2Left.add(benchToggle);
-        row2.add(row2Left, BorderLayout.WEST);
+        row2.add(row2Left);
 
-        JPanel row2Right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 1));
+        JPanel row2Right = new JPanel(new WrapLayout(FlowLayout.RIGHT, 4, 1));
         row2Right.setOpaque(false);
 
         JPanel pills = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0));
@@ -336,7 +335,7 @@ public class PortfolioPerformanceChart extends JPanel {
         zoomGroup.add(btnReset);
 
         row2Right.add(zoomGroup);
-        row2.add(row2Right, BorderLayout.EAST);
+        row2.add(row2Right);
         bar.add(row2);
 
         return bar;

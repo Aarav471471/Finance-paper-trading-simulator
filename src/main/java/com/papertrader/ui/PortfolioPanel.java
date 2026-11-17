@@ -1,5 +1,9 @@
 package com.papertrader.ui;
 
+import com.papertrader.ui.components.WrappingLabel;
+import com.papertrader.ui.components.ResponsiveGridLayout;
+import com.papertrader.ui.components.LeadingTrailingLayout;
+import com.papertrader.ui.components.WrapLayout;
 import com.papertrader.service.AnalyticsService;
 import com.papertrader.service.MarketDataService;
 import com.papertrader.util.MarketFormat;
@@ -207,12 +211,9 @@ public class PortfolioPanel extends BasePanel {
         // 6. Row 5: Periodic P&L & Recent Activity Ledger
         workspace.add(buildPeriodicAndActivityRow());
 
-        JScrollPane scrollPane = new JScrollPane(workspace);
-        scrollPane.setBorder(BorderFactory.createEmptyBorder());
-        scrollPane.setBackground(Theme.APP_BG);
-        scrollPane.getViewport().setBackground(Theme.APP_BG);
-        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-        scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        // Fits the window width (no horizontal bar) and scrolls vertically when needed.
+        JScrollPane scrollPane = new com.papertrader.ui.components.ResponsiveScrollPane(
+                workspace, com.papertrader.ui.components.ResponsiveScrollPane.FIT_CONTENT, Theme.APP_BG);
 
         mainCardContainer.setOpaque(false);
         maximizedChartContainer.setOpaque(false);
@@ -249,7 +250,8 @@ public class PortfolioPanel extends BasePanel {
     // =========================================================================
 
     private JPanel buildTopCommandBar() {
-        JPanel bar = new JPanel(new BorderLayout(12, 8));
+        // Title on the left, clock/export buttons on the right; they stack on narrow windows.
+        JPanel bar = new JPanel(new LeadingTrailingLayout(12, 8));
         bar.setBackground(Theme.SURFACE_SUB);
         bar.setBorder(BorderFactory.createCompoundBorder(
                 new Theme.RoundedBorder(Theme.BORDER_CUSTOM, 10, 1),
@@ -311,10 +313,10 @@ public class PortfolioPanel extends BasePanel {
         titleRow.add(statusPill);
         left.add(titleRow);
 
-        bar.add(left, BorderLayout.WEST);
+        bar.add(left);
 
         // Right Side: Live Clock, Export CSV, Report (PDF), Rebalance Simulator
-        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));
+        JPanel right = new JPanel(new WrapLayout(FlowLayout.RIGHT, 8, 4));
         right.setOpaque(false);
 
         // Clock Pill
@@ -359,7 +361,7 @@ public class PortfolioPanel extends BasePanel {
         btnRebalance.addActionListener(e -> onShowRebalanceModal());
         right.add(btnRebalance);
 
-        bar.add(right, BorderLayout.EAST);
+        bar.add(right);
         return bar;
     }
 
@@ -380,7 +382,8 @@ public class PortfolioPanel extends BasePanel {
     // =========================================================================
 
     private JPanel buildKpiGrid() {
-        JPanel grid = new JPanel(new GridLayout(1, 5, 10, 0));
+        // Five cards in a row, or more rows when the window is too narrow for that.
+        JPanel grid = new JPanel(new ResponsiveGridLayout(5, 190, 10, 10));
         grid.setOpaque(false);
         grid.add(cardNetWorth);
         grid.add(cardInvested);
@@ -411,8 +414,8 @@ public class PortfolioPanel extends BasePanel {
         chartCard.add(performanceChart, BorderLayout.CENTER);
 
         // Right 35%: Asset Allocation Matrix
-        allocationCard.setPreferredSize(new Dimension(325, 310));
-        allocationCard.setMinimumSize(new Dimension(280, 310));
+        allocationCard.setPreferredSize(new Dimension(360, 310));
+        allocationCard.setMinimumSize(new Dimension(320, 310));
 
         row.add(chartCard, BorderLayout.CENTER);
         row.add(allocationCard, BorderLayout.EAST);
@@ -1978,12 +1981,12 @@ public class PortfolioPanel extends BasePanel {
             ));
 
             // Header: Title + Toggle buttons
-            JPanel header = new JPanel(new BorderLayout());
+            JPanel header = new JPanel(new LeadingTrailingLayout(8, 4));
             header.setOpaque(false);
             JLabel title = new JLabel("Asset Allocation Matrix");
             title.setFont(new Font("Inter", Font.BOLD, 15));
             title.setForeground(Theme.TXT_PRIMARY);
-            header.add(title, BorderLayout.WEST);
+            header.add(title);
 
             JPanel toggles = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
             toggles.setBackground(Theme.SIDEBAR_BG);
@@ -2002,7 +2005,7 @@ public class PortfolioPanel extends BasePanel {
             b2.setBorderPainted(false);
             toggles.add(b1);
             toggles.add(b2);
-            header.add(toggles, BorderLayout.EAST);
+            header.add(toggles);
             add(header, BorderLayout.NORTH);
 
             // Center: Donut + Rows
@@ -2035,7 +2038,8 @@ public class PortfolioPanel extends BasePanel {
         }
 
         private JPanel buildBreakdownRow(String name, Color dotColor, JLabel valLbl, JLabel pctLbl) {
-            JPanel r = new JPanel(new BorderLayout(8, 0));
+            // Name on the left, value on the right, or value below the name if the row is narrow.
+            JPanel r = new JPanel(new LeadingTrailingLayout(8, 0));
             r.setBackground(Theme.SURFACE_SUB);
             r.setBorder(BorderFactory.createCompoundBorder(
                     new Theme.RoundedBorder(Theme.BORDER_SUBTLE, 6, 1),
@@ -2062,7 +2066,7 @@ public class PortfolioPanel extends BasePanel {
             n.setForeground(Theme.TXT_PRIMARY);
             left.add(dot);
             left.add(n);
-            r.add(left, BorderLayout.WEST);
+            r.add(left);
 
             JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
             right.setOpaque(false);
@@ -2072,7 +2076,7 @@ public class PortfolioPanel extends BasePanel {
             pctLbl.setForeground(dotColor);
             right.add(valLbl);
             right.add(pctLbl);
-            r.add(right, BorderLayout.EAST);
+            r.add(right);
             return r;
         }
 
@@ -2518,10 +2522,8 @@ public class PortfolioPanel extends BasePanel {
 
             add(mid, BorderLayout.CENTER);
 
-            JLabel adv = new JLabel("Shield: Simulation Risk Advisory: Analytical modeling calculated for virtual educational testing only.");
-            adv.setFont(Theme.TINY);
-            adv.setForeground(Theme.TXT_MUTED);
-            add(adv, BorderLayout.SOUTH);
+            add(new WrappingLabel("Shield: Simulation Risk Advisory: Analytical modeling calculated for virtual educational testing only.",
+                    Theme.TINY, Theme.TXT_MUTED), BorderLayout.SOUTH);
         }
 
         public void updateData(List<HoldingRowData> rows, double totalMktVal) {
@@ -2575,7 +2577,7 @@ public class PortfolioPanel extends BasePanel {
                     BorderFactory.createEmptyBorder(12, 14, 12, 14)
             ));
 
-            JPanel hdr = new JPanel(new BorderLayout());
+            JPanel hdr = new JPanel(new LeadingTrailingLayout(8, 6));
             hdr.setOpaque(false);
             JPanel left = new JPanel();
             left.setLayout(new BoxLayout(left, BoxLayout.Y_AXIS));
@@ -2588,7 +2590,7 @@ public class PortfolioPanel extends BasePanel {
             sub.setForeground(Theme.TXT_MUTED);
             left.add(title);
             left.add(sub);
-            hdr.add(left, BorderLayout.WEST);
+            hdr.add(left);
 
             JPanel toggles = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
             toggles.setBackground(Theme.SIDEBAR_BG);
@@ -2607,11 +2609,11 @@ public class PortfolioPanel extends BasePanel {
             b2.setBorderPainted(false);
             toggles.add(b1);
             toggles.add(b2);
-            hdr.add(toggles, BorderLayout.EAST);
+            hdr.add(toggles);
             add(hdr, BorderLayout.NORTH);
 
             // 4 Period Cards
-            JPanel grid = new JPanel(new GridLayout(1, 4, 8, 0));
+            JPanel grid = new JPanel(new ResponsiveGridLayout(4, 120, 8, 8));
             grid.setOpaque(false);
             grid.add(buildPeriodTile("Day Return", dayVal, dayPct));
             grid.add(buildPeriodTile("1 Week", weekVal, weekPct));
